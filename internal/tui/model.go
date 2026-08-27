@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 	"memcleaner/internal/system"
 	tea "github.com/charmbracelet/bubbletea"
@@ -89,23 +90,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tickMsg:
+		var metricErr, procErr string
+
 		metrics, err := system.GetSystemMetrics()
 		if err != nil {
-			m.Message = fmt.Sprintf("Error getting metrics: %v", err)
+			metricErr = fmt.Sprintf("Error getting metrics: %v", err)
 		} else {
 			m.Metrics = metrics
 		}
 
 		procs, err := system.GetTopProcesses(50)
 		if err != nil {
-			procMsg := fmt.Sprintf("Error getting processes: %v", err)
-			if m.Message == "" {
-				m.Message = procMsg
-			} else {
-				m.Message += " | " + procMsg
-			}
+			procErr = fmt.Sprintf("Error getting processes: %v", err)
 		} else {
 			m.Processes = procs
+		}
+
+		if metricErr != "" || procErr != "" {
+			if metricErr != "" && procErr != "" {
+				m.Message = metricErr + " | " + procErr
+			} else if metricErr != "" {
+				m.Message = metricErr
+			} else {
+				m.Message = procErr
+			}
+		} else {
+			if strings.HasPrefix(m.Message, "Error getting ") {
+				m.Message = ""
+			}
 		}
 
 		if m.Cursor >= len(m.Processes) && len(m.Processes) > 0 {
