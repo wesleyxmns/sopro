@@ -18,9 +18,28 @@ type Model struct {
 }
 
 func NewModel() Model {
-	return Model{
+	m := Model{
 		IsRoot: system.IsRoot(),
 	}
+	metrics, err := system.GetSystemMetrics()
+	if err != nil {
+		m.Message = fmt.Sprintf("Error getting metrics: %v", err)
+	} else {
+		m.Metrics = metrics
+	}
+
+	procs, err := system.GetTopProcesses(50)
+	if err != nil {
+		msg := fmt.Sprintf("Error getting processes: %v", err)
+		if m.Message == "" {
+			m.Message = msg
+		} else {
+			m.Message += " | " + msg
+		}
+	} else {
+		m.Processes = procs
+	}
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -70,8 +89,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tickMsg:
-		m.Metrics, _ = system.GetSystemMetrics()
-		m.Processes, _ = system.GetTopProcesses(50)
+		metrics, err := system.GetSystemMetrics()
+		if err != nil {
+			m.Message = fmt.Sprintf("Error getting metrics: %v", err)
+		} else {
+			m.Metrics = metrics
+		}
+
+		procs, err := system.GetTopProcesses(50)
+		if err != nil {
+			procMsg := fmt.Sprintf("Error getting processes: %v", err)
+			if m.Message == "" {
+				m.Message = procMsg
+			} else {
+				m.Message += " | " + procMsg
+			}
+		} else {
+			m.Processes = procs
+		}
+
 		if m.Cursor >= len(m.Processes) && len(m.Processes) > 0 {
 			m.Cursor = len(m.Processes) - 1
 		}
