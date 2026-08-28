@@ -94,6 +94,9 @@ func (l *LinuxPlatformManager) KillProcess(pid int32) error {
 }
 
 func (l *LinuxPlatformManager) PauseProcess(pid int32) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid PID: must be positive")
+	}
 	p, err := os.FindProcess(int(pid))
 	if err != nil {
 		return err
@@ -102,6 +105,9 @@ func (l *LinuxPlatformManager) PauseProcess(pid int32) error {
 }
 
 func (l *LinuxPlatformManager) ResumeProcess(pid int32) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid PID: must be positive")
+	}
 	p, err := os.FindProcess(int(pid))
 	if err != nil {
 		return err

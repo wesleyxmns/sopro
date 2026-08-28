@@ -50,6 +50,8 @@ func TestLinuxPlatformManager_GetProcesses(t *testing.T) {
 
 func TestLinuxPlatformManager_KillProcess_Invalid(t *testing.T) {
 	var mgr PlatformManager = NewPlatformManager()
+	
+	// Test KillProcess validations
 	err := mgr.KillProcess(-1)
 	if err == nil {
 		t.Error("Expected error when killing invalid negative PID")
@@ -57,6 +59,26 @@ func TestLinuxPlatformManager_KillProcess_Invalid(t *testing.T) {
 	errZero := mgr.KillProcess(0)
 	if errZero == nil {
 		t.Error("Expected error when killing invalid PID 0")
+	}
+
+	// Test PauseProcess validations
+	errPause := mgr.PauseProcess(-1)
+	if errPause == nil {
+		t.Error("Expected error when pausing invalid negative PID")
+	}
+	errPauseZero := mgr.PauseProcess(0)
+	if errPauseZero == nil {
+		t.Error("Expected error when pausing invalid PID 0")
+	}
+
+	// Test ResumeProcess validations
+	errResume := mgr.ResumeProcess(-1)
+	if errResume == nil {
+		t.Error("Expected error when resuming invalid negative PID")
+	}
+	errResumeZero := mgr.ResumeProcess(0)
+	if errResumeZero == nil {
+		t.Error("Expected error when resuming invalid PID 0")
 	}
 }
 
