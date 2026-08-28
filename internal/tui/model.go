@@ -106,18 +106,3 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
-	s := fmt.Sprintf("MemCleaner (Root: %v) | %s\n", m.IsRoot, m.Message)
-	s += fmt.Sprintf("RAM: %d MB Used / %d MB Total | Cache: %d MB\n\n", m.Metrics.UsedRAM/1024/1024, m.Metrics.TotalRAM/1024/1024, m.Metrics.CacheRAM/1024/1024)
-
-	s += fmt.Sprintf("  %-8s %-12s %-6s %-6s %s\n", "PID", "USER", "MEM%", "CPU%", "COMMAND")
-	for i, p := range m.Processes {
-		cursor := " "
-		if m.Cursor == i {
-			cursor = ">"
-		}
-		s += fmt.Sprintf("%s %-8d %-12s %-6.1f%% %-6.1f%% %s\n", cursor, p.PID, p.User, p.MemPct, p.CPUPct, p.Command)
-	}
-	s += "\n[k] Kill Selected  [c] Drop Caches  [q] Quit\n"
-	return s
-}
