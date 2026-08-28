@@ -13,6 +13,6 @@ func FormatBytes(bytes uint64) string {
 		exp++
 	}
 	value := float64(bytes) / float64(div)
-	suffix := []string{"KB", "MB", "GB", "TB"}[exp]
+	suffix := []string{"KB", "MB", "GB", "TB", "PB", "EB"}[exp]
 	return fmt.Sprintf("%.2f %s", value, suffix)
 }
