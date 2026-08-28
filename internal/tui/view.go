@@ -76,15 +76,19 @@ func (m Model) View() string {
 		if m.Width > 80 {
 			cmdWidth := m.Width - 8 - 42 // width - paddings - other columns
 			cmd := p.Command
-			if len(cmd) > cmdWidth && cmdWidth > 0 {
+			if cmdWidth > 3 && len(cmd) > cmdWidth {
 				cmd = cmd[:cmdWidth-3] + "..."
+			} else if cmdWidth > 0 && len(cmd) > cmdWidth {
+				cmd = cmd[:cmdWidth]
 			}
 			line = fmt.Sprintf("%s %-8d %-12s %-8s %-8s %s", cursor, p.PID, p.User, memStr, cpuStr, cmd)
 		} else {
 			cmdWidth := m.Width - 8 - 20
 			cmd := p.Command
-			if len(cmd) > cmdWidth && cmdWidth > 0 {
+			if cmdWidth > 3 && len(cmd) > cmdWidth {
 				cmd = cmd[:cmdWidth-3] + "..."
+			} else if cmdWidth > 0 && len(cmd) > cmdWidth {
+				cmd = cmd[:cmdWidth]
 			}
 			line = fmt.Sprintf("%s %-8d %-8s %s", cursor, p.PID, memStr, cmd)
 		}
