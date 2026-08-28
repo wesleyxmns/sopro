@@ -1,0 +1,20 @@
+//go:build linux
+
+package platform
+
+import (
+	"sopro/internal/app"
+	linuxplatform "sopro/internal/platform/linux"
+)
+
+func New() app.Dependencies {
+	manager := linuxplatform.New()
+	cache := linuxplatform.NewElevatedCacheCleaner(manager)
+	return app.Dependencies{
+		Snapshots:     manager,
+		Processes:     manager,
+		ProcessWaiter: manager,
+		Cache:         cache,
+		Capabilities:  linuxplatform.NewRuntimeCapabilities(manager, cache),
+	}
+}
