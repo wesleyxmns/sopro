@@ -8,12 +8,15 @@ import (
 )
 
 func (m Model) View() string {
-	if m.Width == 0 || m.Height == 0 {
-		return "Rendering Sopro..."
+	if m.Width < 20 || m.Height < 16 {
+		return "Terminal too small..."
 	}
 
 	// Cabeçalho Principal (Métricas Globais)
-	ramProgress := int(float64(m.Metrics.UsedRAM) / float64(m.Metrics.TotalRAM) * 20)
+	var ramProgress int
+	if m.Metrics.TotalRAM > 0 {
+		ramProgress = int(float64(m.Metrics.UsedRAM) / float64(m.Metrics.TotalRAM) * 20)
+	}
 	if ramProgress < 0 { ramProgress = 0 }
 	if ramProgress > 20 { ramProgress = 20 }
 	progressBar := SoproDS.Safe.Render(strings.Repeat("█", ramProgress)) + SoproDS.Muted.Render(strings.Repeat("░", 20-ramProgress))
@@ -45,7 +48,7 @@ func (m Model) View() string {
 
 	var processLines []string
 	// Viewport Scroll: Ajusta exibição para caber na janela
-	maxVisibleRows := m.Height - 12
+	maxVisibleRows := m.Height - 16
 	if maxVisibleRows < 1 { maxVisibleRows = 1 }
 
 	startRow := m.Cursor - (maxVisibleRows / 2)
@@ -67,15 +70,31 @@ func (m Model) View() string {
 		}
 
 		var line string
+		memStr := fmt.Sprintf("%.1f%%", p.MemPct)
+		cpuStr := fmt.Sprintf("%.1f%%", p.CPUPct)
+
 		if m.Width > 80 {
-			line = fmt.Sprintf("%s %-8d %-12s %-8.1f%% %-8.1f%% %s", cursor, p.PID, p.User, p.MemPct, p.CPUPct, p.Command)
+			cmdWidth := m.Width - 8 - 42 // width - paddings - other columns
+			cmd := p.Command
+			if len(cmd) > cmdWidth && cmdWidth > 0 {
+				cmd = cmd[:cmdWidth-3] + "..."
+			}
+			line = fmt.Sprintf("%s %-8d %-12s %-8s %-8s %s", cursor, p.PID, p.User, memStr, cpuStr, cmd)
 		} else {
-			line = fmt.Sprintf("%s %-8d %-8.1f%% %s", cursor, p.PID, p.MemPct, p.Command)
+			cmdWidth := m.Width - 8 - 20
+			cmd := p.Command
+			if len(cmd) > cmdWidth && cmdWidth > 0 {
+				cmd = cmd[:cmdWidth-3] + "..."
+			}
+			line = fmt.Sprintf("%s %-8d %-8s %s", cursor, p.PID, memStr, cmd)
 		}
 		processLines = append(processLines, style.Render(line))
 	}
 
-	tableContent := tableHeader + "\n" + strings.Repeat("─", m.Width-6) + "\n" + strings.Join(processLines, "\n")
+	sepWidth := m.Width - 8
+	if sepWidth < 0 { sepWidth = 0 }
+	
+	tableContent := tableHeader + "\n" + strings.Repeat("─", sepWidth) + "\n" + strings.Join(processLines, "\n")
 	tableBox := lipgloss.NewStyle().
 		Border(SoproDS.Border).
 		BorderForeground(lipgloss.Color("#565F89")).
