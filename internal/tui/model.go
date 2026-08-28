@@ -2,45 +2,36 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"time"
+
 	"memcleaner/internal/system"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type tickMsg time.Time
 
 type Model struct {
+	Manager   system.PlatformManager
 	Metrics   system.SystemMetrics
 	Processes []system.ProcessInfo
 	Cursor    int
+	Width     int
+	Height    int
 	IsRoot    bool
 	Message   string
+	ScrollPos int // Controla o viewport para rolagem de dados
 }
 
-func NewModel() Model {
-	m := Model{
-		IsRoot: system.IsRoot(),
+func NewModel(mgr system.PlatformManager) Model {
+	metrics, _ := mgr.GetMetrics()
+	procs, _ := mgr.GetProcesses(50)
+	return Model{
+		Manager:   mgr,
+		Metrics:   metrics,
+		Processes: procs,
+		IsRoot:    system.IsRoot(),
 	}
-	metrics, err := system.GetSystemMetrics()
-	if err != nil {
-		m.Message = fmt.Sprintf("Error getting metrics: %v", err)
-	} else {
-		m.Metrics = metrics
-	}
-
-	procs, err := system.GetTopProcesses(50)
-	if err != nil {
-		msg := fmt.Sprintf("Error getting processes: %v", err)
-		if m.Message == "" {
-			m.Message = msg
-		} else {
-			m.Message += " | " + msg
-		}
-	} else {
-		m.Processes = procs
-	}
-	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -55,6 +46,11 @@ func doTick() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.Width = msg.Width
+		m.Height = msg.Height
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -69,19 +65,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "k":
 			if len(m.Processes) > 0 {
-				pid := m.Processes[m.Cursor].PID
-				err := system.KillProcess(pid)
+				p := m.Processes[m.Cursor]
+				err := m.Manager.KillProcess(p.PID)
 				if err != nil {
-					m.Message = fmt.Sprintf("Error killing PID %d: %v", pid, err)
+					m.Message = fmt.Sprintf("Error killing process %d: %v", p.PID, err)
 				} else {
-					m.Message = fmt.Sprintf("SIGKILL sent to PID %d", pid)
+					m.Message = fmt.Sprintf("SIGKILL sent to %s (PID: %d)", p.Command, p.PID)
 				}
 			}
 		case "c":
 			if !m.IsRoot {
 				m.Message = "Sudo required to drop caches"
 			} else {
-				err := system.DropCaches()
+				_, err := m.Manager.CleanSystemCache()
 				if err != nil {
 					m.Message = fmt.Sprintf("Drop cache error: %v", err)
 				} else {
@@ -89,37 +85,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-	case tickMsg:
-		var metricErr, procErr string
 
-		metrics, err := system.GetSystemMetrics()
-		if err != nil {
-			metricErr = fmt.Sprintf("Error getting metrics: %v", err)
+	case tickMsg:
+		metrics, err1 := m.Manager.GetMetrics()
+		procs, err2 := m.Manager.GetProcesses(50)
+		if err1 != nil {
+			m.Message = fmt.Sprintf("Metrics Error: %v", err1)
+		} else if err2 != nil {
+			m.Message = fmt.Sprintf("Process Error: %v", err2)
 		} else {
 			m.Metrics = metrics
-		}
-
-		procs, err := system.GetTopProcesses(50)
-		if err != nil {
-			procErr = fmt.Sprintf("Error getting processes: %v", err)
-		} else {
 			m.Processes = procs
+			m.Message = ""
 		}
-
-		if metricErr != "" || procErr != "" {
-			if metricErr != "" && procErr != "" {
-				m.Message = metricErr + " | " + procErr
-			} else if metricErr != "" {
-				m.Message = metricErr
-			} else {
-				m.Message = procErr
-			}
-		} else {
-			if strings.HasPrefix(m.Message, "Error getting ") {
-				m.Message = ""
-			}
-		}
-
 		if m.Cursor >= len(m.Processes) && len(m.Processes) > 0 {
 			m.Cursor = len(m.Processes) - 1
 		}
