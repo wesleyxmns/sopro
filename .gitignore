@@ -1,0 +1,14 @@
+# Binaries
+/sopro
+/sopro.exe
+
+# Local IDE configuration
+.vscode/
+
+# Tools & Analysis
+/graphify-out/
+
+# Specifications & Documentation (per request)
+/docs/
+/specs/
+/README.md
