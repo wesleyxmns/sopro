@@ -1,6 +1,7 @@
 package system
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -11,6 +12,9 @@ func IsRoot() bool {
 }
 
 func KillProcess(pid int32) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid PID: must be greater than 0")
+	}
 	process, err := os.FindProcess(int(pid))
 	if err != nil {
 		return err
