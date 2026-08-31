@@ -221,4 +221,132 @@ func TestServiceDetectsContextsAndMasksSensitiveArgs(t *testing.T) {
 	if p.executed != "stub.restart" {
 		t.Fatalf("executed = %q; want 'stub.restart'", p.executed)
 	}
+
+	// Executing incompatible action must be rejected with ErrIncompatibleAction
+	err = service.ExecuteContextualAction(context.Background(), "docker.stop", proc)
+	if !errors.Is(err, provider.ErrIncompatibleAction) {
+		t.Fatalf("expected ErrIncompatibleAction, got %v", err)
+	}
 }
+
+type containerStubProvider struct{}
+
+func (c *containerStubProvider) Name() string { return "docker-stub" }
+func (c *containerStubProvider) Supports(processdomain.Info) bool { return true }
+func (c *containerStubProvider) Detect(_ context.Context, proc processdomain.Info) []provider.ContextInfo {
+	if proc.PID == 200 {
+		return []provider.ContextInfo{
+			{
+				Tag:   processdomain.ContextDockerCompose,
+				Label: "compose: sangati/postgres",
+				Details: map[string]string{
+					"container_name":  "sangati_postgres",
+					"container_id":    "acf8947e8c35",
+					"image":           "postgres:15-alpine",
+					"compose_project": "sangati",
+					"compose_service": "postgres",
+				},
+			},
+		}
+	}
+	return nil
+}
+func (c *containerStubProvider) Actions(_ context.Context, _ processdomain.Info) []provider.Action {
+	return nil
+}
+func (c *containerStubProvider) Execute(_ context.Context, _ string, _ processdomain.Info) error {
+	return nil
+}
+
+func TestServiceEnrichesContainerEntitiesInSnapshot(t *testing.T) {
+	registry := provider.NewRegistry(&containerStubProvider{})
+	service := NewService(
+		Dependencies{
+			Snapshots: snapshotSourceStub{
+				snapshot: Snapshot{
+					Processes: []processdomain.Info{
+						{
+							Identity: processdomain.Identity{PID: 200},
+							Command:  "postgres",
+							Category: processdomain.CategoryDatabase, // Initially categorized as database
+						},
+					},
+				},
+			},
+		},
+		WithProviderRegistry(registry),
+	)
+
+	snapshot, err := service.Snapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc := snapshot.Processes[0]
+	if proc.Category != processdomain.CategoryContainer {
+		t.Fatalf("Category = %q; want %q", proc.Category, processdomain.CategoryContainer)
+	}
+	if proc.ContainerName != "sangati_postgres" {
+		t.Fatalf("ContainerName = %q; want 'sangati_postgres'", proc.ContainerName)
+	}
+	if proc.ContainerID != "acf8947e8c35" {
+		t.Fatalf("ContainerID = %q; want 'acf8947e8c35'", proc.ContainerID)
+	}
+	if proc.ImageName != "postgres:15-alpine" {
+		t.Fatalf("ImageName = %q; want 'postgres:15-alpine'", proc.ImageName)
+	}
+}
+
+type entitySourceStubProvider struct {
+	containerStubProvider
+}
+
+func (e *entitySourceStubProvider) DiscoverEntities(_ context.Context) []processdomain.Info {
+	return []processdomain.Info{
+		{
+			Identity:      processdomain.Identity{PID: 0},
+			Command:       "stopped_redis",
+			ContainerName: "stopped_redis",
+			ImageName:     "redis:7-alpine",
+			Category:      processdomain.CategoryContainer,
+			State:         processdomain.StateStopped,
+		},
+	}
+}
+
+func TestServiceInjectsStoppedContainersInSnapshot(t *testing.T) {
+	registry := provider.NewRegistry(&entitySourceStubProvider{})
+	service := NewService(
+		Dependencies{
+			Snapshots: snapshotSourceStub{
+				snapshot: Snapshot{
+					Processes: []processdomain.Info{
+						{
+							Identity: processdomain.Identity{PID: 100},
+							Command:  "bash",
+							Category: processdomain.CategorySystem,
+						},
+					},
+				},
+			},
+		},
+		WithProviderRegistry(registry),
+	)
+
+	snapshot, err := service.Snapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Processes) != 2 {
+		t.Fatalf("expected 2 processes, got %d", len(snapshot.Processes))
+	}
+	stopped := snapshot.Processes[1]
+	if stopped.State != processdomain.StateStopped {
+		t.Fatalf("stopped.State = %v; want StateStopped", stopped.State)
+	}
+	if stopped.ContainerName != "stopped_redis" {
+		t.Fatalf("stopped.ContainerName = %q; want 'stopped_redis'", stopped.ContainerName)
+	}
+}
+
+
+
