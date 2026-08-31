@@ -74,6 +74,56 @@ func TestDashboardShowsUpdateBadgeWhenUpdateIsAvailable(t *testing.T) {
 	if !strings.Contains(view, "v0.2.3 [u]") {
 		t.Fatalf("dashboard omitted update badge: %s", view)
 	}
+	if !strings.Contains(view, "NOVA VERSÃO") || !strings.Contains(view, "atualizar agora") {
+		t.Fatalf("dashboard update notice is not prominent enough: %s", view)
+	}
+	if !strings.Contains(view, "[u] atualizar v0.2.3") {
+		t.Fatalf("dashboard footer omitted update action: %s", view)
+	}
+}
+
+func TestUpdateNoticePreservesResponsiveBounds(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 40, Height: 12},
+		{Width: 72, Height: 20},
+		{Width: 120, Height: 30},
+	} {
+		model, backend := newTestModel()
+		model.theme = NewTheme()
+		model.Width, model.Height = size.Width, size.Height
+		model.applySnapshot(backend.snapshot)
+		model.UpdateAvailable = &updater.ReleaseInfo{TagName: "v0.2.3"}
+		model.syncViewport()
+
+		lines := strings.Split(model.View(), "\n")
+		if len(lines) > size.Height {
+			t.Fatalf("update view %dx%d used %d lines", size.Width, size.Height, len(lines))
+		}
+		for lineNumber, line := range lines {
+			if got := lipgloss.Width(line); got > size.Width {
+				t.Fatalf("update view %dx%d line %d width = %d", size.Width, size.Height, lineNumber+1, got)
+			}
+		}
+	}
+}
+
+func TestUpdateConfirmationExplainsAdministrativePermission(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, backend := newTestModel()
+	model.theme = NewTheme()
+	model.Width = 100
+	model.Height = 24
+	model.applySnapshot(backend.snapshot)
+	model.PendingUpdate = &updater.ReleaseInfo{TagName: "v0.2.3"}
+	model.UpdateNeedsElevation = true
+
+	view := model.View()
+	for _, expected := range []string{"ATUALIZAÇÃO DISPONÍVEL", "permissão administrativa", "diretamente pelo sistema"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("update confirmation omitted %q: %s", expected, view)
+		}
+	}
 }
 
 func TestConfirmationOverlaysDashboard(t *testing.T) {
@@ -515,7 +565,3 @@ func TestContainerEntityRendering(t *testing.T) {
 		t.Fatalf("details view omitted ImageName: %s", view)
 	}
 }
-
-
-
-
