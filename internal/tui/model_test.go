@@ -10,6 +10,7 @@ import (
 	"github.com/wesleyxmns/sopro/internal/control"
 	"github.com/wesleyxmns/sopro/internal/memory"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/updater"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -326,6 +327,104 @@ func TestModelContextualActionRequests(t *testing.T) {
 	}
 }
 
+func TestUpdateCheckedMsg_SetsUpdateAvailable(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	release := &updater.ReleaseInfo{
+		TagName: "v0.2.0",
+		Version: "0.2.0",
+	}
+	updated, _ := m.Update(updateCheckedMsg{release: release, isNew: true})
+	m = updated.(Model)
+	if m.UpdateAvailable == nil {
+		t.Fatal("expected UpdateAvailable to be set after updateCheckedMsg with isNew=true")
+	}
+	if m.UpdateAvailable.TagName != "v0.2.0" {
+		t.Fatalf("expected TagName v0.2.0, got %s", m.UpdateAvailable.TagName)
+	}
+}
 
+func TestUpdateCheckedMsg_NoUpdateDoesNothing(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	updated, _ := m.Update(updateCheckedMsg{release: nil, isNew: false})
+	m = updated.(Model)
+	if m.UpdateAvailable != nil {
+		t.Fatal("expected UpdateAvailable to remain nil when no update available")
+	}
+}
 
+func TestUpdateKeyU_SetsPendingUpdate(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	m.ShowSplash = false
+	m.UpdateAvailable = &updater.ReleaseInfo{TagName: "v0.2.0"}
 
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")})
+	m = updated.(Model)
+	if m.PendingUpdate == nil {
+		t.Fatal("expected PendingUpdate to be set after pressing U")
+	}
+	if !strings.Contains(m.Message, "v0.2.0") {
+		t.Fatalf("expected message to contain version, got %q", m.Message)
+	}
+}
+
+func TestUpdateKeyU_NoopWithoutUpdateAvailable(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	m.ShowSplash = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")})
+	m = updated.(Model)
+	if m.PendingUpdate != nil {
+		t.Fatal("expected PendingUpdate to remain nil when no update available")
+	}
+}
+
+func TestUpdatePendingCancel(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	m.ShowSplash = false
+	m.PendingUpdate = &updater.ReleaseInfo{TagName: "v0.2.0"}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.PendingUpdate != nil {
+		t.Fatal("expected PendingUpdate to be nil after pressing esc")
+	}
+	if !strings.Contains(m.Message, "cancelada") {
+		t.Fatalf("expected cancellation message, got %q", m.Message)
+	}
+}
+
+func TestUpdateAppliedMsg_Success(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	m.Acting = true
+	release := &updater.ReleaseInfo{TagName: "v0.2.0"}
+	m.UpdateAvailable = release
+
+	updated, _ := m.Update(updateAppliedMsg{release: release, err: nil})
+	m = updated.(Model)
+	if m.UpdateAvailable != nil {
+		t.Fatal("expected UpdateAvailable to be cleared after successful update")
+	}
+	if !strings.Contains(m.Message, "v0.2.0") || !strings.Contains(m.Message, "✔") {
+		t.Fatalf("expected success message with version, got %q", m.Message)
+	}
+}
+
+func TestUpdateAppliedMsg_Error(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	m.Acting = true
+	release := &updater.ReleaseInfo{TagName: "v0.2.0"}
+	m.UpdateAvailable = release
+
+	updated, _ := m.Update(updateAppliedMsg{release: release, err: errors.New("permission denied")})
+	m = updated.(Model)
+	if !strings.Contains(m.Message, "permission denied") {
+		t.Fatalf("expected error message, got %q", m.Message)
+	}
+}

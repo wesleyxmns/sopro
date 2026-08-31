@@ -23,6 +23,9 @@ func (m Model) View() string {
 	if m.Pending != nil {
 		return m.renderConfirmationFocus(dashboard)
 	}
+	if m.PendingUpdate != nil {
+		return m.renderUpdateConfirmationFocus(dashboard)
+	}
 	if m.Acting {
 		return m.renderExecutionFocus(dashboard)
 	}
@@ -83,18 +86,22 @@ func (m Model) renderWideContext(width int) string {
 func (m Model) renderOperationalIndicators(width int) string {
 	pressure, pressureStyle := m.pressureStatus()
 	telemetry, telemetryStyle := m.telemetryStatus()
+	badge := ""
+	if m.UpdateAvailable != nil {
+		badge = m.theme.Warning.Render("≋ "+m.UpdateAvailable.TagName+" [U]") + m.theme.Divider.Render(" · ")
+	}
 	if width < 26 {
-		return pressureStyle.Render("●") + m.theme.Divider.Render(" · ") + telemetryStyle.Render("◌")
+		return badge + pressureStyle.Render("●") + m.theme.Divider.Render(" · ") + telemetryStyle.Render("◌")
 	}
 	if width < 52 {
-		return m.theme.Muted.Render("mem ") + pressureStyle.Render("● normal") +
+		return badge + m.theme.Muted.Render("mem ") + pressureStyle.Render("● normal") +
 			m.theme.Divider.Render(" · ") + m.theme.Muted.Render("sync ") + telemetryStyle.Render("◌")
 	}
 	if width < 70 {
-		return m.theme.Muted.Render("memória ") + pressureStyle.Render("● "+pressure) +
+		return badge + m.theme.Muted.Render("memória ") + pressureStyle.Render("● "+pressure) +
 			m.theme.Divider.Render(" · ") + m.theme.Muted.Render("coleta ") + telemetryStyle.Render(telemetry)
 	}
-	return m.theme.Muted.Render("SAÚDE DA MEMÓRIA ") + pressureStyle.Render("● "+pressure) +
+	return badge + m.theme.Muted.Render("SAÚDE DA MEMÓRIA ") + pressureStyle.Render("● "+pressure) +
 		m.theme.Divider.Render("   │   ") + m.theme.Muted.Render("COLETA DE DADOS ") + telemetryStyle.Render(telemetry)
 }
 
