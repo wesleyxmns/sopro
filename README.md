@@ -1,13 +1,13 @@
-```text
-  ____   ___  ____  ____   ___
- / ___| / _ \|  _ \|  _ \ / _ \
- \___ \| | | | |_) | |_) | | | |
-  ___) | |_| |  __/|  _ <| |_| |
- |____/ \___/|_|   |_| \_\ \___/
-```
+<div align="center">
+
+<img src="assets/logo.svg" alt="Sopro Logo" width="480" />
 
 # Sopro ≋
-> *Observando a memória com calma e precisão.*
+*Observando a memória com calma e precisão.*
+
+</div>
+
+---
 
 Sopro é uma ferramenta de linha de comando (CLI) e TUI responsiva para **observabilidade de memória e controle de processos** com limites explícitos de segurança e ações contextuais inteligentes (Docker, Navegadores, JVM, Git).
 
