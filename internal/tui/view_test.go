@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/updater"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -57,6 +58,21 @@ func TestSplashDoesNotOverflowResponsiveWidth(t *testing.T) {
 				t.Fatalf("splash width %d line %d = %d; content %q", width, lineNumber+1, got, line)
 			}
 		}
+	}
+}
+
+func TestDashboardShowsUpdateBadgeWhenUpdateIsAvailable(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, backend := newTestModel()
+	model.Width = 100
+	model.Height = 24
+	model.ShowSplash = false
+	model.applySnapshot(backend.snapshot)
+	model.UpdateAvailable = &updater.ReleaseInfo{TagName: "v0.2.3"}
+
+	view := model.View()
+	if !strings.Contains(view, "v0.2.3 [u]") {
+		t.Fatalf("dashboard omitted update badge: %s", view)
 	}
 }
 
@@ -499,7 +515,6 @@ func TestContainerEntityRendering(t *testing.T) {
 		t.Fatalf("details view omitted ImageName: %s", view)
 	}
 }
-
 
 
 
