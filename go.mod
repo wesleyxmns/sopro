@@ -1,4 +1,4 @@
-module sopro
+module github.com/wesleyxmns/sopro
 
 go 1.24.0
 

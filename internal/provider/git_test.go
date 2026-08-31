@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 func TestGitProviderSupports(t *testing.T) {

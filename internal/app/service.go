@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"sopro/internal/audit"
-	"sopro/internal/memory"
-	processdomain "sopro/internal/process"
-	"sopro/internal/provider"
+	"github.com/wesleyxmns/sopro/internal/audit"
+	"github.com/wesleyxmns/sopro/internal/memory"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/provider"
 )
 
 var ErrUnsupported = errors.New("operation is not supported on this platform")

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

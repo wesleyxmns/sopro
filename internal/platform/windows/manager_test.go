@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"sopro/internal/platform/platformtest"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/platform/platformtest"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 func TestManagerPlatformContract(t *testing.T) {

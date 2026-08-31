@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type mockProvider struct {

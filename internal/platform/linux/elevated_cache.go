@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"sopro/internal/app"
+	"github.com/wesleyxmns/sopro/internal/app"
 )
 
 const PrivilegedCleanCacheCommand = "__sopro-clean-cache"

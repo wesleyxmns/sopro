@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type mockHTTPClient struct {

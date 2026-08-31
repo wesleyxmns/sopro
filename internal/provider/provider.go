@@ -5,7 +5,7 @@ import (
 	"errors"
 	"regexp"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type ActionScope string

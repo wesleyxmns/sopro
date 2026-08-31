@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	linuxplatform "sopro/internal/platform/linux"
+	linuxplatform "github.com/wesleyxmns/sopro/internal/platform/linux"
 )
 
 func TestPrivilegedHelperIgnoresNormalInvocation(t *testing.T) {

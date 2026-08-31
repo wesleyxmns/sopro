@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 func TestJVMProviderSupports(t *testing.T) {

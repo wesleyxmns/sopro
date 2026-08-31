@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"sopro/internal/memory"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/memory"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"

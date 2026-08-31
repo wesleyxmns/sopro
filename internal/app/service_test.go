@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"sopro/internal/audit"
-	processdomain "sopro/internal/process"
-	"sopro/internal/provider"
+	"github.com/wesleyxmns/sopro/internal/audit"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/provider"
 )
 
 type snapshotSourceStub struct {

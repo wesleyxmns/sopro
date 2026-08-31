@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"sopro/internal/audit"
+	"github.com/wesleyxmns/sopro/internal/audit"
 )
 
 type LogNotifier struct {
