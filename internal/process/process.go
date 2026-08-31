@@ -8,6 +8,7 @@ const (
 	StateUnknown State = "unknown"
 	StateRunning State = "running"
 	StatePaused  State = "paused"
+	StateStopped State = "stopped"
 )
 
 type Risk string
@@ -45,6 +46,9 @@ type Info struct {
 	Risk        Risk
 	Category    Category
 	Contexts    []ContextTag
+	ContainerID   string
+	ContainerName string
+	ImageName     string
 	Reclaimable uint64
 	Leak        LeakAssessment
 }
