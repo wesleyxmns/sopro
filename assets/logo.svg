@@ -1,37 +1,99 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 150" width="100%" height="100%">
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 490 150"
+  width="490"
+  height="150"
+  preserveAspectRatio="xMidYMid meet"
+  role="img"
+  aria-labelledby="sopro-title sopro-desc"
+>
+  <title id="sopro-title">SOPRO</title>
+
+  <desc id="sopro-desc">
+    Logotipo SOPRO em estilo ASCII acompanhado por um símbolo de três ondas.
+  </desc>
+
   <style>
-    .icon {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      font-size: 48px;
-      font-weight: 700;
-      fill: #38bdf8;
+    :root {
+      --sopro-color: #38bdf8;
     }
+
+    .brand {
+      fill: var(--sopro-color);
+    }
+
+    .mark {
+      fill: none;
+      stroke: var(--sopro-color);
+      stroke-width: 4.25;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     .ascii {
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      font-family:
+        ui-monospace,
+        "SFMono-Regular",
+        "Cascadia Code",
+        "Roboto Mono",
+        Menlo,
+        Consolas,
+        "Liberation Mono",
+        monospace;
+
       font-size: 21px;
       font-weight: 700;
-      white-space: pre;
-      fill: #38bdf8;
-      letter-spacing: 0px;
+      letter-spacing: 0;
     }
+
     @media (prefers-color-scheme: light) {
-      .icon, .ascii {
-        fill: #0284c7;
+      :root {
+        --sopro-color: #0284c7;
       }
     }
+
     @media (prefers-color-scheme: dark) {
-      .icon, .ascii {
-        fill: #67e8f9;
+      :root {
+        --sopro-color: #67e8f9;
       }
     }
   </style>
-  <!-- Ícone de onda ≋ perfeitamente centralizado na altura da letra S -->
-  <text x="46" y="75" text-anchor="middle" dominant-baseline="central" class="icon">≋</text>
 
-  <!-- Logo ASCII SOPRO -->
-  <text x="66" y="27" text-anchor="start" class="ascii">  ____   ___  ____  ____   ___  </text>
-  <text x="66" y="51" text-anchor="start" class="ascii"> / ___| / _ \|  _ \|  _ \ / _ \ </text>
-  <text x="66" y="75" text-anchor="start" class="ascii"> \___ \| | | | |_) | |_) | | | |</text>
-  <text x="66" y="99" text-anchor="start" class="ascii">  ___) | |_| |  __/|  _ &lt;| |_| |</text>
-  <text x="66" y="123" text-anchor="start" class="ascii"> |____/ \___/|_|   |_| \_\ \___/ </text>
+  <svg
+    x="12"
+    y="51"
+    width="44"
+    height="48"
+    viewBox="0 0 64 64"
+    preserveAspectRatio="xMidYMid meet"
+    aria-hidden="true"
+  >
+    <path
+      class="mark"
+      d="M12 19C18 15.5 25 15.5 31 19C37 22.5 44 22.5 50 19"
+    />
+
+    <path
+      class="mark"
+      d="M8 32C16 27.5 25 27.5 33 32C41 36.5 50 36.5 56 32"
+    />
+
+    <path
+      class="mark"
+      d="M12 45C18 41.5 25 41.5 31 45C37 48.5 44 48.5 50 45"
+    />
+  </svg>
+
+  <text
+    x="66"
+    y="27"
+    class="brand ascii"
+    xml:space="preserve"
+  >
+    <tspan x="66" dy="0">  ____   ___  ____  ____   ___  </tspan>
+    <tspan x="66" dy="24"> / ___| / _ \|  _ \|  _ \ / _ \ </tspan>
+    <tspan x="66" dy="24"> \___ \| | | | |_) | |_) | | | |</tspan>
+    <tspan x="66" dy="24">  ___) | |_| |  __/|  _ &lt;| |_| |</tspan>
+    <tspan x="66" dy="24"> |____/ \___/|_|   |_| \_\ \___/ </tspan>
+  </text>
 </svg>
