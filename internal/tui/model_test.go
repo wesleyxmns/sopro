@@ -263,6 +263,34 @@ func TestModelInteractiveControlsSearchFilterSortGroup(t *testing.T) {
 	}
 }
 
+func TestSearchModeNavigatesFilteredResultsWithArrows(t *testing.T) {
+	model, backend := newTestModel()
+	model.applySnapshot(backend.snapshot)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("proc")})
+	model = updated.(Model)
+	if len(model.Snapshot.Processes) != 3 {
+		t.Fatalf("expected three filtered results, got %d", len(model.Snapshot.Processes))
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if model.Cursor != 1 {
+		t.Fatalf("down arrow cursor = %d, want 1", model.Cursor)
+	}
+	if !model.Searching || model.query.Search != "proc" {
+		t.Fatal("arrow navigation changed the active search")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	model = updated.(Model)
+	if model.Cursor != 0 {
+		t.Fatalf("up arrow cursor = %d, want 0", model.Cursor)
+	}
+}
+
 func TestModelContextualActionRequests(t *testing.T) {
 	model, backend := newTestModel()
 	snapshot := backend.snapshot
@@ -479,5 +507,65 @@ func TestUpdateAppliedMsg_PermissionErrorShowsAction(t *testing.T) {
 	m = updated.(Model)
 	if !strings.Contains(m.Message, "sudo sopro update") {
 		t.Fatalf("expected actionable permission guidance, got %q", m.Message)
+	}
+}
+
+func TestSnapshotRefreshPreservesUpdaterMessages(t *testing.T) {
+	tests := []struct {
+		name    string
+		message tea.Msg
+		want    string
+	}{
+		{
+			name:    "check failure",
+			message: updateCheckedMsg{err: errors.New("offline"), source: updateCheckManual},
+			want:    "offline",
+		},
+		{
+			name:    "permission failure",
+			message: updateAppliedMsg{release: &updater.ReleaseInfo{TagName: "v0.3.1"}, err: updater.ErrPermissionDenied},
+			want:    "sudo sopro update",
+		},
+		{
+			name:    "successful update",
+			message: updateAppliedMsg{release: &updater.ReleaseInfo{TagName: "v0.3.1"}},
+			want:    "Sopro atualizado para v0.3.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, backend := newTestModel()
+			updated, _ := m.Update(tt.message)
+			m = updated.(Model)
+
+			updated, _ = m.Update(snapshotLoadedMsg{snapshot: backend.snapshot})
+			m = updated.(Model)
+			if !strings.Contains(m.Message, tt.want) {
+				t.Fatalf("snapshot refresh cleared updater message: got %q, want %q", m.Message, tt.want)
+			}
+		})
+	}
+}
+
+func TestSnapshotRecoveryClearsOnlySnapshotFailure(t *testing.T) {
+	m, backend := newTestModel()
+	updated, _ := m.Update(snapshotLoadedMsg{err: errors.New("offline")})
+	m = updated.(Model)
+	if !strings.Contains(m.Message, "Falha ao atualizar: offline") {
+		t.Fatalf("expected snapshot failure, got %q", m.Message)
+	}
+
+	updated, _ = m.Update(snapshotLoadedMsg{snapshot: backend.snapshot})
+	m = updated.(Model)
+	if m.Message != "" {
+		t.Fatalf("snapshot recovery kept stale failure: %q", m.Message)
+	}
+
+	m.Message = "Ação encerrar concluída no PID 100"
+	updated, _ = m.Update(snapshotLoadedMsg{snapshot: backend.snapshot})
+	m = updated.(Model)
+	if m.Message != "" {
+		t.Fatalf("snapshot refresh changed cleanup for ordinary status: %q", m.Message)
 	}
 }
