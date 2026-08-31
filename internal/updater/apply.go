@@ -30,13 +30,12 @@ func Apply(ctx context.Context, release *ReleaseInfo) error {
 		return ErrNoAssetForPlatform
 	}
 
-	execPath, err := os.Executable()
+	execPath, requiresElevation, err := UpdateTarget()
 	if err != nil {
-		return fmt.Errorf("não foi possível determinar o caminho do binário atual: %w", err)
+		return err
 	}
-	execPath, err = filepath.EvalSymlinks(execPath)
-	if err != nil {
-		return fmt.Errorf("não foi possível resolver link do binário: %w", err)
+	if requiresElevation {
+		return ErrPermissionDenied
 	}
 
 	tmpDir, err := os.MkdirTemp("", "sopro-update-*")
@@ -65,6 +64,44 @@ func Apply(ctx context.Context, release *ReleaseInfo) error {
 	}
 
 	return replaceBinary(execPath, binaryData)
+}
+
+// UpdateTarget retorna o executável em uso e informa se sua substituição exige
+// privilégios administrativos. A verificação usa uma criação real no diretório
+// de destino, respeitando permissões e ACLs do sistema de arquivos.
+func UpdateTarget() (path string, requiresElevation bool, err error) {
+	path, err = os.Executable()
+	if err != nil {
+		return "", false, fmt.Errorf("não foi possível determinar o caminho do binário atual: %w", err)
+	}
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", false, fmt.Errorf("não foi possível resolver link do binário: %w", err)
+	}
+	if runtime.GOOS == "windows" {
+		return path, false, nil
+	}
+	requiresElevation, err = updateTargetRequiresElevation(path)
+	return path, requiresElevation, err
+}
+
+func updateTargetRequiresElevation(path string) (bool, error) {
+	probe, err := os.CreateTemp(filepath.Dir(path), ".sopro-update-check-*")
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return true, nil
+		}
+		return false, fmt.Errorf("não foi possível verificar permissão de atualização: %w", err)
+	}
+	probePath := probe.Name()
+	if closeErr := probe.Close(); closeErr != nil {
+		_ = os.Remove(probePath)
+		return false, fmt.Errorf("não foi possível verificar permissão de atualização: %w", closeErr)
+	}
+	if removeErr := os.Remove(probePath); removeErr != nil {
+		return false, fmt.Errorf("não foi possível remover arquivo de verificação: %w", removeErr)
+	}
+	return false, nil
 }
 
 func downloadFile(ctx context.Context, url, destPath string) error {
