@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"sopro/internal/app"
-	"sopro/internal/control"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/app"
+	"github.com/wesleyxmns/sopro/internal/control"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

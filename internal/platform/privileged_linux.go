@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	linuxplatform "sopro/internal/platform/linux"
+	linuxplatform "github.com/wesleyxmns/sopro/internal/platform/linux"
 )
 
 func RunPrivilegedHelper(ctx context.Context, args []string) (bool, uint64, error) {

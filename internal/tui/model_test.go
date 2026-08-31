@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"sopro/internal/app"
-	"sopro/internal/control"
-	"sopro/internal/memory"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/app"
+	"github.com/wesleyxmns/sopro/internal/control"
+	"github.com/wesleyxmns/sopro/internal/memory"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

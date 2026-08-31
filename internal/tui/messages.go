@@ -3,8 +3,8 @@ package tui
 import (
 	"time"
 
-	"sopro/internal/app"
-	"sopro/internal/control"
+	"github.com/wesleyxmns/sopro/internal/app"
+	"github.com/wesleyxmns/sopro/internal/control"
 )
 
 type tickMsg time.Time

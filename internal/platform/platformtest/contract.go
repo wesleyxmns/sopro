@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"sopro/internal/app"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/app"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type Adapter interface {

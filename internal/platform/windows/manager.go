@@ -9,9 +9,9 @@ import (
 	"sort"
 	"time"
 
-	"sopro/internal/app"
-	"sopro/internal/memory"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/app"
+	"github.com/wesleyxmns/sopro/internal/memory"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 
 	"github.com/shirou/gopsutil/v3/mem"
 	gprocess "github.com/shirou/gopsutil/v3/process"

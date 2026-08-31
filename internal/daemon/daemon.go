@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"sopro/internal/app"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/app"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type Config struct {

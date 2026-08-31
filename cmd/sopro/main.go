@@ -12,13 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"sopro/internal/app"
-	"sopro/internal/audit"
-	"sopro/internal/daemon"
-	"sopro/internal/platform"
-	processdomain "sopro/internal/process"
-	"sopro/internal/provider"
-	"sopro/internal/tui"
+	"github.com/wesleyxmns/sopro/internal/app"
+	"github.com/wesleyxmns/sopro/internal/audit"
+	"github.com/wesleyxmns/sopro/internal/daemon"
+	"github.com/wesleyxmns/sopro/internal/platform"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/provider"
+	"github.com/wesleyxmns/sopro/internal/tui"
+	"github.com/wesleyxmns/sopro/internal/version"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -33,11 +34,14 @@ func main() {
 		return
 	}
 
+	showVersion := flag.Bool("version", false, "exibe a versão do Sopro e sai")
+	flag.BoolVar(showVersion, "v", false, "exibe a versão do Sopro e sai (atalho)")
+
 	defaultTheme := os.Getenv("SOPRO_THEME")
 	if defaultTheme == "" {
 		defaultTheme = "auto"
 	}
-	themeName := flag.String("theme", defaultTheme, "tema: auto, dark, light, mono ou cyber")
+	themeName := flag.String("theme", defaultTheme, "tema da interface: auto, dark, light, mono ou cyber")
 	defaultRisk := processdomain.DefaultRiskPolicyConfig()
 	criticalPIDMax := flag.Int("risk-critical-pid-max", envInt("SOPRO_RISK_CRITICAL_PID_MAX", int(defaultRisk.CriticalPIDMax)), "maior PID sempre considerado crítico; 0 desativa")
 	criticalCommands := flag.String("risk-critical-commands", envString("SOPRO_RISK_CRITICAL_COMMANDS", strings.Join(defaultRisk.CriticalCommands, ",")), "comandos críticos separados por vírgula")
@@ -50,7 +54,33 @@ func main() {
 	daemonSustained := flag.Duration("daemon-sustained", envDuration("SOPRO_DAEMON_SUSTAINED", 15*time.Second), "duração contínua de pressão necessária para recomendar/executar alívio")
 	daemonCooldown := flag.Duration("daemon-cooldown", envDuration("SOPRO_DAEMON_COOLDOWN", 60*time.Second), "intervalo mínimo entre ações de alívio")
 	daemonMemThreshold := flag.Float64("daemon-memory-threshold", envFloat("SOPRO_DAEMON_MEMORY_THRESHOLD", 90.0), "limiar de uso de memória (%) para considerar pressão")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Sopro — Observabilidade e controle de processos e memória\n\n")
+		fmt.Fprintf(os.Stderr, "Uso:\n")
+		fmt.Fprintf(os.Stderr, "  sopro [opções]\n\n")
+		fmt.Fprintf(os.Stderr, "Opções:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nAtalhos na TUI:\n")
+		fmt.Fprintf(os.Stderr, "  j/k, setas  navegar pelos processos\n")
+		fmt.Fprintf(os.Stderr, "  /           pesquisa fuzzy de comandos\n")
+		fmt.Fprintf(os.Stderr, "  f, tab      alternar filtros de categoria (sistema, containers, dev, etc.)\n")
+		fmt.Fprintf(os.Stderr, "  s           alternar ordenação (memória, CPU, comando)\n")
+		fmt.Fprintf(os.Stderr, "  g           alternar agrupamento (lista, categorias, árvore)\n")
+		fmt.Fprintf(os.Stderr, "  p           pausar / retomar processo\n")
+		fmt.Fprintf(os.Stderr, "  x           encerrar processo graciosamente (SIGTERM)\n")
+		fmt.Fprintf(os.Stderr, "  k           forçar encerramento imediato (SIGKILL)\n")
+		fmt.Fprintf(os.Stderr, "  c           limpar cache do sistema operacional\n")
+		fmt.Fprintf(os.Stderr, "  d/r/z/s     ações em containers Docker (stop, restart, pause, start)\n")
+		fmt.Fprintf(os.Stderr, "  q           sair\n")
+	}
+
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.Info())
+		return
+	}
 
 	theme, err := tui.ThemeFor(*themeName)
 	if err != nil {

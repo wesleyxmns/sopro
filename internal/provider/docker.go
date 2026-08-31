@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type CommandRunner interface {

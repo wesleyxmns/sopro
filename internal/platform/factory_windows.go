@@ -3,8 +3,8 @@
 package platform
 
 import (
-	"sopro/internal/app"
-	windowsplatform "sopro/internal/platform/windows"
+	"github.com/wesleyxmns/sopro/internal/app"
+	windowsplatform "github.com/wesleyxmns/sopro/internal/platform/windows"
 )
 
 func New() app.Dependencies {

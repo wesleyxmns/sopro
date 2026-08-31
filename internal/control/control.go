@@ -3,7 +3,7 @@ package control
 import (
 	"time"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type Action string

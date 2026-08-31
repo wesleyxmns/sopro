@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	processdomain "sopro/internal/process"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 var (

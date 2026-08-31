@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"sopro/internal/platform/platformtest"
-	processdomain "sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/platform/platformtest"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
 
 	gprocess "github.com/shirou/gopsutil/v3/process"
 )
