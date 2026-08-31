@@ -87,8 +87,10 @@ func (m Model) renderOperationalIndicators(width int) string {
 	pressure, pressureStyle := m.pressureStatus()
 	telemetry, telemetryStyle := m.telemetryStatus()
 	badge := ""
-	if m.UpdateAvailable != nil {
-		badge = m.theme.Warning.Render("≋ "+m.UpdateAvailable.TagName+" [u]") + m.theme.Divider.Render(" · ")
+	if m.CheckingUpdate {
+		badge = m.theme.Focus.Render("↻ versão") + m.theme.Divider.Render(" · ")
+	} else if m.UpdateCheckFailed {
+		badge = m.theme.Warning.Render("! versão offline") + m.theme.Divider.Render(" · ")
 	}
 	if width < 26 {
 		return badge + pressureStyle.Render("●") + m.theme.Divider.Render(" · ") + telemetryStyle.Render("◌")
@@ -103,6 +105,20 @@ func (m Model) renderOperationalIndicators(width int) string {
 	}
 	return badge + m.theme.Muted.Render("SAÚDE DA MEMÓRIA ") + pressureStyle.Render("● "+pressure) +
 		m.theme.Divider.Render("   │   ") + m.theme.Muted.Render("COLETA DE DADOS ") + telemetryStyle.Render(telemetry)
+}
+
+func (m Model) renderUpdateNotice(width int) string {
+	if m.UpdateAvailable == nil || width < 1 {
+		return ""
+	}
+	label := "↑ NOVA VERSÃO " + m.UpdateAvailable.TagName + " [u]"
+	action := " atualizar agora"
+	if width < 44 {
+		label = "↑ " + m.UpdateAvailable.TagName + " [u]"
+		action = " atualizar"
+	}
+	content := m.theme.Warning.Bold(true).Render(label) + m.theme.Focus.Render(action)
+	return ansi.Truncate(content, width, "")
 }
 
 func (m Model) telemetryStatus() (string, lipgloss.Style) {
@@ -301,6 +317,9 @@ func (m Model) renderDashboardHeader(layout layout) string {
 	}
 	if layout.mode != layoutWide {
 		lines := []string{m.renderTopBar()}
+		if notice := m.renderUpdateNotice(layout.width); notice != "" {
+			lines = append(lines, notice)
+		}
 		if status != "" {
 			lines = append(lines, status)
 		}
@@ -312,6 +331,9 @@ func (m Model) renderDashboardHeader(layout layout) string {
 	const gap = 3
 	rightWidth := max(layout.width-lipgloss.Width(logo)-gap, 1)
 	rightLines := []string{m.renderWideContext(rightWidth)}
+	if notice := m.renderUpdateNotice(rightWidth); notice != "" {
+		rightLines = append(rightLines, notice)
+	}
 	if status != "" {
 		rightLines = append(rightLines, status)
 	}
@@ -593,6 +615,9 @@ func hasContextTag(contexts []processdomain.ContextTag, target processdomain.Con
 
 func (m Model) renderFooter(width int) string {
 	hints := hintsForWidth(width, m.Pending != nil)
+	if m.UpdateAvailable != nil {
+		hints = append([]keyHint{{"u", "atualizar " + m.UpdateAvailable.TagName}}, hints...)
+	}
 	parts := make([]string, 0, len(hints))
 	for _, hint := range hints {
 		parts = append(parts, m.renderKeyHint(hint))
