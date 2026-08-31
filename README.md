@@ -74,12 +74,20 @@ sopro --theme cyber
 # Exibir a versão e metadados de compilação
 sopro --version
 
+# Verificar ou instalar a release mais recente
+sopro update --check
+sopro update
+
 # Exibir ajuda e todas as opções de linha de comando
 sopro --help
 
 # Iniciar em modo daemon (observação em segundo plano sem interface)
 sopro --daemon
 ```
+
+Quando o binário estiver em um diretório protegido, como `/usr/local/bin`, o
+comando de atualização solicitará permissão administrativa pelo `sudo`. A senha
+é recebida diretamente pelo sistema e não é lida pelo Sopro.
 
 ---
 
@@ -97,7 +105,8 @@ sopro --daemon
 | `k` | Forçar encerramento imediato (`SIGKILL`) |
 | `c` | Limpar cache do sistema operacional (quando permitido) |
 | `d` / `r` / `z` / `s` | Ações de container Docker (stop, restart, pause, start) |
-| `b` / `u` | Ações de navegador via CDP (fechar abas em branco, suspender abas) |
+| `b` / `a` | Ações de navegador via CDP (fechar abas em branco, suspender abas) |
+| `u` | Verificar novamente ou instalar uma atualização disponível |
 | `j` | Forçar Garbage Collection em runtime JVM (`jcmd GC.run`) |
 | `w` / `v` | Ações de repositório Git (`git status`, `git fetch`) |
 | `enter` / `y` | Confirmar ação no diálogo modal |
