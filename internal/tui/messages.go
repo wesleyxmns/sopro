@@ -22,14 +22,22 @@ type actionFinishedMsg struct {
 	err    error
 }
 
+type updateCheckSource uint8
+
+const (
+	updateCheckCache updateCheckSource = iota
+	updateCheckBackground
+	updateCheckManual
+)
+
 type updateCheckedMsg struct {
 	release *updater.ReleaseInfo
 	isNew   bool
 	err     error
+	source  updateCheckSource
 }
 
 type updateAppliedMsg struct {
 	release *updater.ReleaseInfo
 	err     error
 }
-

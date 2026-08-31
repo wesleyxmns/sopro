@@ -18,28 +18,31 @@ import (
 )
 
 type Model struct {
-	service         *app.Service
-	Snapshot        app.Snapshot
-	Capabilities    app.Capabilities
-	Cursor          int
-	Width           int
-	Height          int
-	Message         string
-	Loading         bool
-	Acting          bool
-	ShowSplash      bool
-	Pending         *control.Request
-	ActiveAction    *control.Request
-	UpdateAvailable *updater.ReleaseInfo
-	PendingUpdate   *updater.ReleaseInfo
-	viewport        viewport.Model
-	theme           Theme
-	memoryHistory   []memory.Snapshot
-	allProcesses    []processdomain.Info
-	query           processdomain.Query
-	groupMode       processGroupMode
-	processDepth    map[processdomain.Identity]int
-	Searching       bool
+	service              *app.Service
+	Snapshot             app.Snapshot
+	Capabilities         app.Capabilities
+	Cursor               int
+	Width                int
+	Height               int
+	Message              string
+	Loading              bool
+	Acting               bool
+	ShowSplash           bool
+	Pending              *control.Request
+	ActiveAction         *control.Request
+	UpdateAvailable      *updater.ReleaseInfo
+	PendingUpdate        *updater.ReleaseInfo
+	CheckingUpdate       bool
+	UpdateCheckFailed    bool
+	UpdateNeedsElevation bool
+	viewport             viewport.Model
+	theme                Theme
+	memoryHistory        []memory.Snapshot
+	allProcesses         []processdomain.Info
+	query                processdomain.Query
+	groupMode            processGroupMode
+	processDepth         map[processdomain.Identity]int
+	Searching            bool
 }
 
 type processGroupMode int
@@ -60,14 +63,15 @@ func WithTheme(theme Theme) Option {
 
 func NewModel(service *app.Service, options ...Option) Model {
 	model := Model{
-		service:      service,
-		Capabilities: service.Capabilities(),
-		Loading:      true,
-		ShowSplash:   true,
-		viewport:     viewport.New(1, 1),
-		theme:        NewTheme(),
-		query:        processdomain.Query{},
-		processDepth: make(map[processdomain.Identity]int),
+		service:        service,
+		Capabilities:   service.Capabilities(),
+		Loading:        true,
+		ShowSplash:     true,
+		CheckingUpdate: true,
+		viewport:       viewport.New(1, 1),
+		theme:          NewTheme(),
+		query:          processdomain.Query{},
+		processDepth:   make(map[processdomain.Identity]int),
 	}
 	for _, option := range options {
 		option(&model)
@@ -80,7 +84,8 @@ func (m Model) Init() tea.Cmd {
 		loadSnapshotCmd(m.service),
 		scheduleTick(),
 		finishSplashCmd(),
-		checkUpdateCmd(version.Version),
+		cachedUpdateCmd(version.Version),
+		checkUpdateCmd(version.Version, updateCheckBackground),
 	)
 }
 
@@ -137,21 +142,50 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadSnapshotCmd(m.service)
 
 	case updateCheckedMsg:
-		if msg.err == nil && msg.isNew && msg.release != nil {
-			m.UpdateAvailable = msg.release
+		if msg.source == updateCheckCache && !m.CheckingUpdate {
+			return m, nil
 		}
+		if msg.source != updateCheckCache {
+			m.CheckingUpdate = false
+		}
+		if msg.err != nil {
+			m.UpdateCheckFailed = true
+			if msg.source == updateCheckManual {
+				m.Message = "Falha ao verificar atualizações: " + msg.err.Error()
+			}
+			return m, nil
+		}
+		m.UpdateCheckFailed = false
+		if msg.isNew && msg.release != nil {
+			m.UpdateAvailable = msg.release
+			if msg.source == updateCheckManual {
+				m.Message = fmt.Sprintf("↑ Nova versão %s disponível — pressione u para atualizar", msg.release.TagName)
+			}
+		} else if msg.source != updateCheckCache {
+			m.UpdateAvailable = nil
+			if msg.source == updateCheckManual {
+				m.Message = "✔ O Sopro já está na versão mais recente"
+			}
+		}
+		m.syncViewport()
 		return m, nil
 
 	case updateAppliedMsg:
 		m.Acting = false
 		m.ActiveAction = nil
 		if msg.err != nil {
-			m.Message = "Falha na atualização: " + msg.err.Error()
+			if errors.Is(msg.err, updater.ErrPermissionDenied) {
+				m.Message = "Atualização requer permissão administrativa: execute sudo sopro update"
+			} else {
+				m.Message = "Falha na atualização: " + msg.err.Error()
+			}
 			return m, nil
 		}
 		m.UpdateAvailable = nil
 		m.PendingUpdate = nil
+		m.UpdateNeedsElevation = false
 		m.Message = fmt.Sprintf("✔ Sopro atualizado para %s! Reinicie para carregar.", msg.release.TagName)
+		m.syncViewport()
 		return m, nil
 	}
 
@@ -344,9 +378,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildProcessView()
 	case "u", "U":
 		if m.UpdateAvailable != nil {
+			_, requiresElevation, targetErr := updater.UpdateTarget()
+			if targetErr != nil {
+				m.Message = "Não foi possível preparar a atualização: " + targetErr.Error()
+				return m, nil
+			}
 			m.PendingUpdate = m.UpdateAvailable
+			m.UpdateNeedsElevation = requiresElevation
 			m.Message = fmt.Sprintf("Confirmar atualização do Sopro para %s?", m.UpdateAvailable.TagName)
+			break
 		}
+		m.CheckingUpdate = true
+		m.UpdateCheckFailed = false
+		m.Message = "Verificando atualizações no GitHub…"
+		return m, checkUpdateCmd(version.Version, updateCheckManual)
 	case "esc":
 		m.Message = ""
 	}
@@ -543,6 +588,9 @@ func (m *Model) syncViewport() {
 	layout := calculateLayout(m.Width, m.Height)
 	m.viewport.Width = layout.listWidth
 	m.viewport.Height = layout.viewportHeight
+	if m.UpdateAvailable != nil {
+		m.viewport.Height = max(m.viewport.Height-1, 1)
+	}
 	m.viewport.SetContent(m.renderProcessRows(layout.listWidth, layout.mode))
 	if m.Cursor < m.viewport.YOffset {
 		m.viewport.SetYOffset(m.Cursor)
