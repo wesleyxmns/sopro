@@ -1,6 +1,7 @@
 # Binaries
 /sopro
 /sopro.exe
+/bin/
 
 # Local IDE configuration
 .vscode/
@@ -11,4 +12,3 @@
 # Specifications & Documentation (per request)
 /docs/
 /specs/
-/README.md
