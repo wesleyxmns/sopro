@@ -262,3 +262,70 @@ func TestModelInteractiveControlsSearchFilterSortGroup(t *testing.T) {
 	}
 }
 
+func TestModelContextualActionRequests(t *testing.T) {
+	model, backend := newTestModel()
+	snapshot := backend.snapshot
+	snapshot.Processes[0].Category = processdomain.CategoryContainer
+	snapshot.Processes[0].ContainerName = "sangati_postgres"
+	snapshot.Processes[0].Contexts = []processdomain.ContextTag{processdomain.ContextDockerCompose}
+	model.applySnapshot(snapshot)
+
+	// Press 'd' to stop docker container
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m := updated.(Model)
+	if m.Pending == nil || m.Pending.Action != control.ActionDockerStop {
+		t.Fatalf("expected ActionDockerStop, got %+v", m.Pending)
+	}
+	if !strings.Contains(m.Message, "sangati_postgres") {
+		t.Fatalf("expected container name in message, got %q", m.Message)
+	}
+
+	// Cancel with esc
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.Pending != nil {
+		t.Fatal("expected pending action to be canceled")
+	}
+
+	// Press 'z' to pause docker container
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	m = updated.(Model)
+	if m.Pending == nil || m.Pending.Action != control.ActionDockerPause {
+		t.Fatalf("expected ActionDockerPause, got %+v", m.Pending)
+	}
+
+	// Pressing JVM shortcut 'j' on a container process must be ignored
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated.(Model)
+	if m.Pending != nil {
+		t.Fatalf("expected 'j' (JVM GC) to be ignored on a container process, got pending: %+v", m.Pending)
+	}
+
+	// Test stopped container triggers ActionDockerStart on 's' and 'd'
+	snapshot.Processes[0].State = processdomain.StateStopped
+	m.applySnapshot(snapshot)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = updated.(Model)
+	if m.Pending == nil || m.Pending.Action != control.ActionDockerStart {
+		t.Fatalf("expected ActionDockerStart on 's', got %+v", m.Pending)
+	}
+	if !strings.Contains(m.Message, "sangati_postgres") {
+		t.Fatalf("expected container name in message, got %q", m.Message)
+	}
+
+	// Cancel and press 'd'
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+	if m.Pending == nil || m.Pending.Action != control.ActionDockerStart {
+		t.Fatalf("expected ActionDockerStart on 'd' for stopped container, got %+v", m.Pending)
+	}
+}
+
+
+
+

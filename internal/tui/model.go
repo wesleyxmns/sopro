@@ -170,7 +170,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "up":
 		m.moveCursor(-1)
-	case "down", "j":
+	case "down":
 		m.moveCursor(1)
 	case "x":
 		m.prepareProcessAction(control.ActionTerminate)
@@ -191,12 +191,111 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.Pending = &control.Request{Action: control.ActionClean}
 		m.Message = "Confirmar limpeza manual do cache?"
+	case "d":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryContainer || selected.ContainerID != "") {
+			name := selected.ContainerName
+			if name == "" {
+				name = fmt.Sprintf("PID %d", selected.PID)
+			}
+			if selected.State == processdomain.StateStopped {
+				m.Pending = &control.Request{
+					Action:        control.ActionDockerStart,
+					Process:       selected.Identity,
+					ContainerName: selected.ContainerName,
+					ContainerID:   selected.ContainerID,
+				}
+				m.Message = fmt.Sprintf("Confirmar início do container '%s'?", name)
+			} else {
+				m.Pending = &control.Request{
+					Action:        control.ActionDockerStop,
+					Process:       selected.Identity,
+					ContainerName: selected.ContainerName,
+					ContainerID:   selected.ContainerID,
+				}
+				m.Message = fmt.Sprintf("Confirmar parada do container '%s'?", name)
+			}
+		}
+	case "r":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryContainer || selected.ContainerID != "") {
+			name := selected.ContainerName
+			if name == "" {
+				name = fmt.Sprintf("PID %d", selected.PID)
+			}
+			m.Pending = &control.Request{
+				Action:        control.ActionDockerRestart,
+				Process:       selected.Identity,
+				ContainerName: selected.ContainerName,
+				ContainerID:   selected.ContainerID,
+			}
+			m.Message = fmt.Sprintf("Confirmar reinício do container '%s'?", name)
+		}
+	case "z":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryContainer || selected.ContainerID != "") {
+			name := selected.ContainerName
+			if name == "" {
+				name = fmt.Sprintf("PID %d", selected.PID)
+			}
+			m.Pending = &control.Request{
+				Action:        control.ActionDockerPause,
+				Process:       selected.Identity,
+				ContainerName: selected.ContainerName,
+				ContainerID:   selected.ContainerID,
+			}
+			m.Message = fmt.Sprintf("Confirmar pausa do container '%s'?", name)
+		}
+	case "b":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryBrowser || hasContextTag(selected.Contexts, processdomain.ContextBrowserDebug)) {
+			m.Pending = &control.Request{Action: control.ActionCDPCloseBlank, Process: selected.Identity}
+			m.Message = fmt.Sprintf("Confirmar fechamento de abas vazias via CDP (PID %d)?", selected.PID)
+		}
+	case "u":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryBrowser || hasContextTag(selected.Contexts, processdomain.ContextBrowserDebug)) {
+			m.Pending = &control.Request{Action: control.ActionCDPDiscardInactive, Process: selected.Identity}
+			m.Message = fmt.Sprintf("Confirmar suspensão de abas inativas via CDP (PID %d)?", selected.PID)
+		}
+	case "j":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryJVM || hasContextTag(selected.Contexts, processdomain.ContextTag("jvm-runtime"))) {
+			m.Pending = &control.Request{Action: control.ActionJVMRunGC, Process: selected.Identity}
+			m.Message = fmt.Sprintf("Confirmar Garbage Collection na JVM (PID %d)?", selected.PID)
+		}
 	case "/":
 		m.Searching = true
 		m.Message = "Busca fuzzy: digite para filtrar · enter conclui · esc limpa"
-	case "f":
+	case "f", "tab":
 		m.cycleCategoryFilter()
+	case "shift+tab":
+		m.cycleCategoryFilterReverse()
+	case "1":
+		m.setCategoryFilter("")
+	case "2":
+		m.setCategoryFilter(processdomain.CategoryBrowser)
+	case "3":
+		m.setCategoryFilter(processdomain.CategoryContainer)
+	case "4":
+		m.setCategoryFilter(processdomain.CategoryDevelopment)
+	case "5":
+		m.setCategoryFilter(processdomain.CategoryDatabase)
+	case "6":
+		m.setCategoryFilter(processdomain.CategoryJVM)
+	case "7":
+		m.setCategoryFilter(processdomain.CategorySystem)
+	case "8":
+		m.setCategoryFilter(processdomain.CategoryOther)
 	case "s":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryContainer || selected.ContainerID != "") && selected.State == processdomain.StateStopped {
+			name := selected.ContainerName
+			if name == "" {
+				name = selected.Command
+			}
+			m.Pending = &control.Request{
+				Action:        control.ActionDockerStart,
+				Process:       selected.Identity,
+				ContainerName: selected.ContainerName,
+				ContainerID:   selected.ContainerID,
+			}
+			m.Message = fmt.Sprintf("Confirmar início do container '%s'?", name)
+			break
+		}
 		m.cycleSort()
 	case "g":
 		m.groupMode = (m.groupMode + 1) % 3
@@ -230,6 +329,11 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) setCategoryFilter(category processdomain.Category) {
+	m.query.Category = category
+	m.rebuildProcessView()
+}
+
 func (m *Model) cycleCategoryFilter() {
 	categories := []processdomain.Category{
 		"", processdomain.CategoryBrowser, processdomain.CategoryContainer,
@@ -244,6 +348,24 @@ func (m *Model) cycleCategoryFilter() {
 		}
 	}
 	m.query.Category = categories[(index+1)%len(categories)]
+	m.rebuildProcessView()
+}
+
+func (m *Model) cycleCategoryFilterReverse() {
+	categories := []processdomain.Category{
+		"", processdomain.CategoryBrowser, processdomain.CategoryContainer,
+		processdomain.CategoryDevelopment, processdomain.CategoryDatabase,
+		processdomain.CategoryJVM, processdomain.CategorySystem, processdomain.CategoryOther,
+	}
+	index := 0
+	for candidate := range categories {
+		if categories[candidate] == m.query.Category {
+			index = candidate
+			break
+		}
+	}
+	newIndex := (index - 1 + len(categories)) % len(categories)
+	m.query.Category = categories[newIndex]
 	m.rebuildProcessView()
 }
 
