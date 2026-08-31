@@ -100,12 +100,14 @@ func (g *GitProvider) Actions(ctx context.Context, proc processdomain.Info) []Ac
 	return []Action{
 		{
 			ID:          "git.status",
+			Scope:       ScopeGit,
 			Label:       "git status",
 			Description: "Executa verificação de status do repositório",
 			Danger:      false,
 		},
 		{
 			ID:          "git.fetch",
+			Scope:       ScopeGit,
 			Label:       "git fetch",
 			Description: "Busca atualizações no repositório remoto",
 			Danger:      false,

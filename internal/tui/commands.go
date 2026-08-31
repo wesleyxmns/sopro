@@ -6,6 +6,7 @@ import (
 
 	"sopro/internal/app"
 	"sopro/internal/control"
+	processdomain "sopro/internal/process"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -53,7 +54,12 @@ func executeActionCmd(service *app.Service, request control.Request) tea.Cmd {
 		case control.ActionClean:
 			result.Reclaimed, err = service.CleanCache(ctx)
 		default:
-			err = app.ErrUnsupported
+			proc := processdomain.Info{
+				Identity:      request.Process,
+				ContainerName: request.ContainerName,
+				ContainerID:   request.ContainerID,
+			}
+			err = service.ExecuteContextualAction(ctx, string(request.Action), proc)
 		}
 		result.Finished = time.Now()
 		return actionFinishedMsg{result: result, err: err}

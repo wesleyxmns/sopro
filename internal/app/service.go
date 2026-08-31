@@ -142,9 +142,30 @@ func (s *Service) Snapshot(ctx context.Context, limit int) (Snapshot, error) {
 			contexts := s.providers.Detect(ctx, snapshot.Processes[index])
 			for _, c := range contexts {
 				snapshot.Processes[index].Contexts = append(snapshot.Processes[index].Contexts, c.Tag)
+				if c.Details != nil {
+					if name := c.Details["container_name"]; name != "" {
+						snapshot.Processes[index].ContainerName = name
+						snapshot.Processes[index].Category = processdomain.CategoryContainer
+					}
+					if id := c.Details["container_id"]; id != "" {
+						snapshot.Processes[index].ContainerID = id
+						snapshot.Processes[index].Category = processdomain.CategoryContainer
+					}
+					if img := c.Details["image"]; img != "" {
+						snapshot.Processes[index].ImageName = img
+					}
+				}
 			}
 		}
 	}
+	if s.providers != nil {
+		extraEntities := s.providers.DiscoverEntities(ctx)
+		for _, entity := range extraEntities {
+			entity.CommandLine = provider.MaskSensitiveArgs(entity.CommandLine)
+			snapshot.Processes = append(snapshot.Processes, entity)
+		}
+	}
+
 	assessments := s.leakGuard.Observe(snapshot.TakenAt, snapshot.Processes)
 	for index := range snapshot.Processes {
 		snapshot.Processes[index].Leak = assessments[snapshot.Processes[index].Identity]
@@ -152,16 +173,23 @@ func (s *Service) Snapshot(ctx context.Context, limit int) (Snapshot, error) {
 	return snapshot, nil
 }
 
-func (s *Service) ContextualActions(ctx context.Context, proc processdomain.Info) []provider.Action {
+func (s *Service) AvailableActions(ctx context.Context, proc processdomain.Info) []provider.Action {
 	if s == nil || s.providers == nil {
 		return nil
 	}
 	return s.providers.Actions(ctx, proc)
 }
 
+func (s *Service) ContextualActions(ctx context.Context, proc processdomain.Info) []provider.Action {
+	return s.AvailableActions(ctx, proc)
+}
+
 func (s *Service) ExecuteContextualAction(ctx context.Context, actionID string, proc processdomain.Info) error {
 	if s == nil || s.providers == nil {
 		return ErrUnsupported
+	}
+	if !s.providers.SupportsAction(ctx, actionID, proc) {
+		return provider.ErrIncompatibleAction
 	}
 	started := time.Now()
 	err := s.providers.Execute(ctx, actionID, proc)

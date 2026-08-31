@@ -7,12 +7,12 @@ type keyHint struct {
 
 var defaultHints = []keyHint{
 	{"↑↓", "navegar"},
+	{"1-8/tab", "abas"},
 	{"p", "pausar/retomar"},
 	{"x", "encerrar"},
 	{"k", "forçar"},
 	{"c", "limpar cache"},
 	{"/", "buscar"},
-	{"f", "filtrar"},
 	{"s", "ordenar"},
 	{"g", "agrupar"},
 	{"q", "sair"},
@@ -27,7 +27,7 @@ func hintsForWidth(width int, pending bool) []keyHint {
 	}
 	hints := make([]keyHint, 0, len(defaultHints))
 	for _, hint := range defaultHints {
-		if width < 110 && (hint.key == "p" || hint.key == "c" || hint.key == "/" || hint.key == "f" || hint.key == "s" || hint.key == "g") {
+		if width < 125 && (hint.key == "1-8/tab" || hint.key == "/" || hint.key == "s" || hint.key == "g") {
 			continue
 		}
 		if width < 145 && (hint.key == "s" || hint.key == "g") {

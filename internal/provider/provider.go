@@ -8,9 +8,21 @@ import (
 	processdomain "sopro/internal/process"
 )
 
+type ActionScope string
+
+const (
+	ScopeUniversal ActionScope = "universal"
+	ScopeContainer ActionScope = "container"
+	ScopeBrowser   ActionScope = "browser"
+	ScopeJVM       ActionScope = "jvm"
+	ScopeGit       ActionScope = "git"
+	ScopeGlobal    ActionScope = "global"
+)
+
 var (
-	ErrActionNotFound = errors.New("action not found")
-	ErrUnsupported    = errors.New("provider does not support action")
+	ErrActionNotFound     = errors.New("action not found")
+	ErrUnsupported        = errors.New("provider does not support action")
+	ErrIncompatibleAction = errors.New("action is incompatible with process type/scope")
 )
 
 var (
@@ -31,6 +43,7 @@ func MaskSensitiveArgs(commandLine string) string {
 
 type Action struct {
 	ID          string
+	Scope       ActionScope
 	Label       string
 	Description string
 	Danger      bool
@@ -48,6 +61,10 @@ type Provider interface {
 	Detect(ctx context.Context, proc processdomain.Info) []ContextInfo
 	Actions(ctx context.Context, proc processdomain.Info) []Action
 	Execute(ctx context.Context, actionID string, proc processdomain.Info) error
+}
+
+type EntitySource interface {
+	DiscoverEntities(ctx context.Context) []processdomain.Info
 }
 
 type Registry struct {
@@ -98,6 +115,19 @@ func (r *Registry) Actions(ctx context.Context, proc processdomain.Info) []Actio
 	return actions
 }
 
+func (r *Registry) SupportsAction(ctx context.Context, actionID string, proc processdomain.Info) bool {
+	for _, p := range r.providers {
+		if p.Supports(proc) {
+			for _, a := range p.Actions(ctx, proc) {
+				if a.ID == actionID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (r *Registry) Execute(ctx context.Context, actionID string, proc processdomain.Info) error {
 	for _, p := range r.providers {
 		if p.Supports(proc) {
@@ -108,5 +138,18 @@ func (r *Registry) Execute(ctx context.Context, actionID string, proc processdom
 			}
 		}
 	}
-	return ErrActionNotFound
+	return ErrIncompatibleAction
+}
+
+func (r *Registry) DiscoverEntities(ctx context.Context) []processdomain.Info {
+	var entities []processdomain.Info
+	for _, p := range r.providers {
+		if ctx.Err() != nil {
+			break
+		}
+		if source, ok := p.(EntitySource); ok {
+			entities = append(entities, source.DiscoverEntities(ctx)...)
+		}
+	}
+	return entities
 }

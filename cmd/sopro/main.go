@@ -78,6 +78,7 @@ func main() {
 		provider.NewDockerProvider(),
 		provider.NewGitProvider(),
 		provider.NewCDPProvider(),
+		provider.NewJVMProvider(),
 	)
 	service := app.NewService(
 		dependencies,

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"sopro/internal/memory"
@@ -46,53 +47,6 @@ func (m Model) renderDashboard() string {
 
 	footer := m.renderFooter(layout.width)
 	return strings.Join([]string{header, navigation, main, footer}, "\n")
-}
-
-func (m Model) renderProcessSectionHeader(layout layout) string {
-	left := m.theme.Focus.Render("Processos") +
-		m.theme.Muted.Render(fmt.Sprintf("  %d de %d em observação", len(m.Snapshot.Processes), len(m.allProcesses)))
-	if m.Searching || m.query.Search != "" {
-		left += m.theme.Focus.Render("  busca: " + m.query.Search + "▌")
-	}
-	line := left
-	if layout.mode != layoutCompact {
-		right := m.theme.Muted.Render(strings.ToUpper(filterLabel(m.query.Category)) + " · " + strings.ToUpper(sortLabel(m.query.Sort)) + " · " + strings.ToUpper(groupLabel(m.groupMode)))
-		gap := max(layout.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
-		line = ansi.Truncate(left+strings.Repeat(" ", gap)+right, layout.width, "")
-	}
-	return m.theme.Divider.Render(strings.Repeat("─", layout.width)) + "\n" + line
-}
-
-func (m Model) renderDashboardHeader(layout layout) string {
-	status := ""
-	if m.Message != "" {
-		status = m.renderStatus(m.Message)
-	}
-	if layout.mode != layoutWide {
-		lines := []string{m.renderTopBar()}
-		if status != "" {
-			lines = append(lines, status)
-		}
-		lines = append(lines, m.renderMemorySummary(layout.width))
-		return strings.Join(lines, "\n")
-	}
-
-	logo := m.renderLogo()
-	const gap = 3
-	rightWidth := max(layout.width-lipgloss.Width(logo)-gap, 1)
-	rightLines := []string{m.renderWideContext(rightWidth)}
-	if status != "" {
-		rightLines = append(rightLines, status)
-	}
-	rightLines = append(rightLines, m.renderMemorySummary(rightWidth))
-	right := strings.Join(rightLines, "\n")
-
-	return lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		logo,
-		strings.Repeat(" ", gap),
-		lipgloss.NewStyle().Width(rightWidth).Render(right),
-	)
 }
 
 func (m Model) renderTopBar() string {
@@ -279,12 +233,98 @@ func (m Model) renderMetricCell(label, value, note string, width int) string {
 	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
 }
 
+func (m Model) renderProcessSectionHeader(layout layout) string {
+	left := m.theme.Focus.Render("Processos")
+	if m.Searching || m.query.Search != "" {
+		left += m.theme.Focus.Render("  busca: " + m.query.Search + "▌")
+	}
+	line := left
+	if layout.mode != layoutCompact {
+		obs := fmt.Sprintf("%d de %d em observação", len(m.Snapshot.Processes), len(m.allProcesses))
+		right := m.theme.Muted.Render(obs + " · " + strings.ToUpper(sortLabel(m.query.Sort)) + " · " + strings.ToUpper(groupLabel(m.groupMode)))
+		gap := max(layout.width-lipgloss.Width(left)-lipgloss.Width(right), 1)
+		line = ansi.Truncate(left+strings.Repeat(" ", gap)+right, layout.width, "")
+	}
+	tabs := ansi.Truncate(m.renderCategoryTabs(layout.width), layout.width, "")
+	return m.theme.Divider.Render(strings.Repeat("─", layout.width)) + "\n" + line + "\n" + tabs + "\n"
+}
+
+func (m Model) renderCategoryTabs(width int) string {
+	counts := make(map[processdomain.Category]int)
+	for _, proc := range m.allProcesses {
+		counts[proc.Category]++
+	}
+
+	tabs := []struct {
+		category processdomain.Category
+		label    string
+		key      string
+	}{
+		{"", "Todos", "1"},
+		{processdomain.CategoryBrowser, "Navegadores", "2"},
+		{processdomain.CategoryContainer, "Containers", "3"},
+		{processdomain.CategoryDevelopment, "Dev", "4"},
+		{processdomain.CategoryDatabase, "Bancos", "5"},
+		{processdomain.CategoryJVM, "JVM", "6"},
+		{processdomain.CategorySystem, "Sistema", "7"},
+		{processdomain.CategoryOther, "Outros", "8"},
+	}
+
+	var renderedTabs []string
+	for _, tab := range tabs {
+		count := len(m.allProcesses)
+		if tab.category != "" {
+			count = counts[tab.category]
+		}
+		text := fmt.Sprintf(" %s:%s (%d) ", tab.key, tab.label, count)
+		if m.query.Category == tab.category {
+			renderedTabs = append(renderedTabs, m.theme.Selected.Render(text))
+		} else {
+			renderedTabs = append(renderedTabs, m.theme.Muted.Render(text))
+		}
+	}
+
+	return strings.Join(renderedTabs, " ")
+}
+
+func (m Model) renderDashboardHeader(layout layout) string {
+	status := ""
+	if m.Message != "" {
+		status = m.renderStatus(m.Message)
+	}
+	if layout.mode != layoutWide {
+		lines := []string{m.renderTopBar()}
+		if status != "" {
+			lines = append(lines, status)
+		}
+		lines = append(lines, m.renderMemorySummary(layout.width))
+		return strings.Join(lines, "\n")
+	}
+
+	logo := m.renderLogo()
+	const gap = 3
+	rightWidth := max(layout.width-lipgloss.Width(logo)-gap, 1)
+	rightLines := []string{m.renderWideContext(rightWidth)}
+	if status != "" {
+		rightLines = append(rightLines, status)
+	}
+	rightLines = append(rightLines, m.renderMemorySummary(rightWidth))
+	right := strings.Join(rightLines, "\n")
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		logo,
+		strings.Repeat(" ", gap),
+		lipgloss.NewStyle().Width(rightWidth).Render(right),
+	)
+}
+
 func (m Model) renderTableHeader(width int, mode layoutMode) string {
 	var header string
 	if mode == layoutCompact {
-		header = fmt.Sprintf("  %-7s %-10s %s", "PID", "MEMÓRIA", "PROCESSO")
+		header = fmt.Sprintf("  %-7s %9s %s", "PID", "MEMÓRIA", "PROCESSO")
 	} else {
-		header = fmt.Sprintf("  %-7s %-12s %9s %7s %-10s %s", "PID", "USUÁRIO", "MEMÓRIA", "CPU", "ESTADO", "PROCESSO")
+		header = fmt.Sprintf("  %-7s %-14s %9s %-6s %-10s %s", "PID", "USUÁRIO", "MEMÓRIA", "  CPU", "ESTADO", "PROCESSO")
 	}
 	return m.theme.Muted.Render(ansi.Truncate(header, width, ""))
 }
@@ -299,35 +339,52 @@ func (m Model) renderProcessRows(width int, mode layoutMode) string {
 
 		var row string
 		command := proc.Command
+		if proc.ContainerName != "" {
+			command = proc.ContainerName
+		}
 		if m.groupMode == groupCategory {
 			command = categoryLabel(proc.Category) + " › " + command
 		}
 		if m.groupMode == groupTree {
 			command = strings.Repeat("  ", m.processDepth[proc.Identity]) + "└ " + command
 		}
+
+		pidStr := strconv.Itoa(int(proc.PID))
+		if proc.PID <= 0 {
+			pidStr = "-"
+		}
+		userStr := proc.User
+		if userStr == "" {
+			userStr = "-"
+		}
+
 		if mode == layoutCompact {
-			commandWidth := max(width-23, 1)
+			commandWidth := max(width-20, 1)
 			row = fmt.Sprintf(
-				"%s %-7d %-10s %s",
+				"%s %-7s %9s %s",
 				marker,
-				proc.PID,
+				pidStr,
 				memory.FormatBytes(proc.MemoryBytes),
 				ansi.Truncate(command, commandWidth, "…"),
 			)
 		} else {
-			commandWidth := max(width-56, 1)
+			cpuStr := fmt.Sprintf("%5.1f%%", proc.CPUPct)
+			if proc.State == processdomain.StateStopped {
+				cpuStr = "     -"
+			}
+			commandWidth := max(width-53, 1)
 			row = fmt.Sprintf(
-				"%s %-7d %-12s %9s %6.1f%% %-10s %s",
+				"%s %-7s %-14s %9s %6s %s %s",
 				marker,
-				proc.PID,
-				ansi.Truncate(proc.User, 12, "…"),
+				pidStr,
+				ansi.Truncate(userStr, 14, "…"),
 				memory.FormatBytes(proc.MemoryBytes),
-				proc.CPUPct,
-				stateLabel(proc),
+				cpuStr,
+				m.renderStateLabel(proc),
 				ansi.Truncate(command, commandWidth, "…"),
 			)
 		}
-		row = lipgloss.NewStyle().Width(max(width-1, 1)).Render(row)
+		row = ansi.Truncate(row, max(width-1, 1), "")
 		if index == m.Cursor {
 			row = m.theme.Selected.Render(row)
 		}
@@ -345,13 +402,23 @@ func (m Model) renderDetails(width int) string {
 		return ""
 	}
 	innerWidth := max(width-4, 1)
-	command := ansi.Truncate(proc.Command, innerWidth, "…")
+	title := proc.Command
+	if proc.ContainerName != "" {
+		title = fmt.Sprintf("%s (%s)", proc.ContainerName, proc.Command)
+	}
+	command := ansi.Truncate(title, innerWidth, "…")
 	identity := ansi.Truncate(fmt.Sprintf("PID %d · %s · %s", proc.PID, proc.User, categoryLabel(proc.Category)), innerWidth, "…")
 	separator := m.theme.Divider.Render(strings.Repeat("─", innerWidth))
 	content := []string{
 		m.theme.Muted.Render("PROCESSO SELECIONADO"),
 		m.theme.Strong.Render(command),
 		m.theme.Muted.Render(identity),
+	}
+	if proc.ImageName != "" {
+		content = append(content, m.theme.Muted.Render("IMAGEM    ")+m.theme.Focus.Render(ansi.Truncate(proc.ImageName, max(innerWidth-10, 1), "…")))
+	}
+	if proc.CommandLine != "" && proc.CommandLine != proc.Command {
+		content = append(content, m.theme.Muted.Render("COMANDO   ")+m.theme.Focus.Render(ansi.Truncate(proc.CommandLine, max(innerWidth-10, 1), "…")))
 	}
 	if len(proc.Contexts) > 0 {
 		tags := make([]string, 0, len(proc.Contexts))
@@ -428,13 +495,17 @@ func (m Model) renderProcessMetricGrid(proc processdomain.Info, width int) strin
 	baseWidth := max(contentWidth/4, 1)
 	widths := []int{baseWidth, baseWidth, baseWidth, max(contentWidth-baseWidth*3, 1)}
 	separator := m.theme.Divider.Render("│")
+	cpuText := fmt.Sprintf("%.1f%%", proc.CPUPct)
+	if proc.State == processdomain.StateStopped {
+		cpuText = "-"
+	}
 	return lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		m.renderProcessMetric("MEMÓRIA", memory.FormatBytes(proc.MemoryBytes), widths[0]),
 		separator,
-		m.renderProcessMetric("CPU", fmt.Sprintf("%.1f%%", proc.CPUPct), widths[1]),
+		m.renderProcessMetric("CPU", cpuText, widths[1]),
 		separator,
-		m.renderProcessMetric("ESTADO", stateLabel(proc), widths[2]),
+		m.renderProcessMetric("ESTADO", m.renderStateLabel(proc), widths[2]),
 		separator,
 		m.renderProcessMetric("RISCO", riskLabel(proc.Risk), widths[3]),
 	)
@@ -448,6 +519,11 @@ func (m Model) renderProcessMetric(label, value string, width int) string {
 }
 
 func (m Model) renderPanelActions(proc processdomain.Info, width int) string {
+	if proc.State == processdomain.StateStopped {
+		actionLine := m.renderKeyHint(keyHint{"s", "docker start"})
+		return ansi.Truncate(actionLine, width, "")
+	}
+
 	pauseLabel := "pausar"
 	if proc.State == processdomain.StatePaused {
 		pauseLabel = "retomar"
@@ -465,7 +541,47 @@ func (m Model) renderPanelActions(proc processdomain.Info, width int) string {
 		"  ",
 		m.renderKeyHint(keyHint{"c", "cache"}),
 	)
-	return ansi.Truncate(first, width, "") + "\n" + ansi.Truncate(second, width, "")
+	lines := []string{ansi.Truncate(first, width, ""), ansi.Truncate(second, width, "")}
+
+	if proc.Category == processdomain.CategoryContainer || proc.ContainerID != "" {
+		third := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			lipgloss.NewStyle().Width(columnWidth).Render(m.renderKeyHint(keyHint{"d", "docker stop"})),
+			"  ",
+			m.renderKeyHint(keyHint{"r", "docker restart"}),
+		)
+		fourth := m.renderKeyHint(keyHint{"z", "docker pause"})
+		lines = append(lines, ansi.Truncate(third, width, ""), ansi.Truncate(fourth, width, ""))
+	} else if proc.Category == processdomain.CategoryBrowser || hasContextTag(proc.Contexts, processdomain.ContextBrowserDebug) {
+		third := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			lipgloss.NewStyle().Width(columnWidth).Render(m.renderKeyHint(keyHint{"b", "fechar vazias"})),
+			"  ",
+			m.renderKeyHint(keyHint{"u", "suspender abas"}),
+		)
+		lines = append(lines, ansi.Truncate(third, width, ""))
+	} else if proc.Category == processdomain.CategoryJVM || hasContextTag(proc.Contexts, processdomain.ContextTag("jvm-runtime")) {
+		lines = append(lines, ansi.Truncate(m.renderKeyHint(keyHint{"j", "forçar GC"}), width, ""))
+	} else if proc.Category == processdomain.CategoryDevelopment || hasContextTag(proc.Contexts, processdomain.ContextGitRepository) {
+		third := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			lipgloss.NewStyle().Width(columnWidth).Render(m.renderKeyHint(keyHint{"w", "git status"})),
+			"  ",
+			m.renderKeyHint(keyHint{"v", "git fetch"}),
+		)
+		lines = append(lines, ansi.Truncate(third, width, ""))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func hasContextTag(contexts []processdomain.ContextTag, target processdomain.ContextTag) bool {
+	for _, c := range contexts {
+		if c == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) renderFooter(width int) string {
@@ -494,12 +610,27 @@ func (m Model) renderStatus(status string) string {
 	return m.theme.Muted.Render(status)
 }
 
+func (m Model) renderStateLabel(proc processdomain.Info) string {
+	switch proc.State {
+	case processdomain.StatePaused:
+		return m.theme.Warning.Render("Ⅱ") + " pausado "
+	case processdomain.StateRunning:
+		return m.theme.Good.Render("●") + " ativo   "
+	case processdomain.StateStopped:
+		return m.theme.Muted.Render("○ parado  ")
+	default:
+		return m.theme.Muted.Render("? desconh.")
+	}
+}
+
 func stateLabel(proc processdomain.Info) string {
 	switch proc.State {
 	case processdomain.StatePaused:
 		return "Ⅱ pausado"
 	case processdomain.StateRunning:
 		return "● ativo"
+	case processdomain.StateStopped:
+		return "○ parado"
 	default:
 		return "? desconhec."
 	}

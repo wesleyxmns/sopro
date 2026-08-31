@@ -107,8 +107,16 @@ func (c *CDPProvider) Actions(ctx context.Context, proc processdomain.Info) []Ac
 	return []Action{
 		{
 			ID:          "cdp.close_blank",
+			Scope:       ScopeBrowser,
 			Label:       "fechar abas em branco",
 			Description: fmt.Sprintf("Fecha páginas sobre:blank abertas no navegador (porta %d)", port),
+			Danger:      false,
+		},
+		{
+			ID:          "cdp.discard_inactive",
+			Scope:       ScopeBrowser,
+			Label:       "suspender abas inativas",
+			Description: fmt.Sprintf("Descarta da memória abas inativas do navegador (porta %d)", port),
 			Danger:      false,
 		},
 	}
@@ -122,6 +130,33 @@ func (c *CDPProvider) Execute(ctx context.Context, actionID string, proc process
 
 	switch actionID {
 	case "cdp.close_blank":
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", port), nil)
+		if err != nil {
+			return err
+		}
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		var targets []cdpTarget
+		if err := json.Unmarshal(body, &targets); err != nil {
+			return err
+		}
+		for _, target := range targets {
+			if target.Type == "page" && (target.URL == "about:blank" || target.URL == "chrome://newtab/" || target.URL == "edge://newtab/") {
+				closeReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/close/%s", port, target.ID), nil)
+				if closeReq != nil {
+					closeResp, closeErr := c.client.Do(closeReq)
+					if closeErr == nil && closeResp != nil {
+						closeResp.Body.Close()
+					}
+				}
+			}
+		}
+		return nil
+	case "cdp.discard_inactive":
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", port), nil)
 		if err != nil {
 			return err
