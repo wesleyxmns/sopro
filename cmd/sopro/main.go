@@ -19,6 +19,7 @@ import (
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
 	"github.com/wesleyxmns/sopro/internal/provider"
 	"github.com/wesleyxmns/sopro/internal/tui"
+	"github.com/wesleyxmns/sopro/internal/updater"
 	"github.com/wesleyxmns/sopro/internal/version"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,6 +32,11 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stdout, reclaimed)
+		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "update" {
+		handleUpdateCommand(os.Args[2:])
 		return
 	}
 
@@ -58,7 +64,8 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Sopro — Observabilidade e controle de processos e memória\n\n")
 		fmt.Fprintf(os.Stderr, "Uso:\n")
-		fmt.Fprintf(os.Stderr, "  sopro [opções]\n\n")
+		fmt.Fprintf(os.Stderr, "  sopro [opções]\n")
+		fmt.Fprintf(os.Stderr, "  sopro update [--check]   atualiza o Sopro para a versão mais recente\n\n")
 		fmt.Fprintf(os.Stderr, "Opções:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nAtalhos na TUI:\n")
@@ -214,4 +221,45 @@ func envFloat(name string, fallback float64) float64 {
 		}
 	}
 	return fallback
+}
+
+func handleUpdateCommand(args []string) {
+	updateFlags := flag.NewFlagSet("update", flag.ExitOnError)
+	checkOnly := updateFlags.Bool("check", false, "apenas verifica se há atualizações disponíveis sem instalar")
+	updateFlags.BoolVar(checkOnly, "c", false, "apenas verifica se há atualizações disponíveis sem instalar (atalho)")
+	_ = updateFlags.Parse(args)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	checker := updater.NewChecker()
+	fmt.Println("Buscando atualizações no GitHub...")
+	release, isNew, err := checker.Check(ctx, version.Version, true)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Erro ao buscar atualizações: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !isNew {
+		fmt.Printf("O Sopro já está na versão mais recente (%s).\n", version.Short())
+		return
+	}
+
+	fmt.Printf("Nova versão disponível: %s (versão atual: %s)\n", release.TagName, version.Short())
+	if release.ReleaseNotes != "" {
+		fmt.Printf("\nNovidades:\n%s\n\n", release.ReleaseNotes)
+	}
+
+	if *checkOnly {
+		fmt.Println("Para atualizar, execute: sopro update")
+		return
+	}
+
+	fmt.Printf("Baixando e instalando %s...\n", release.TagName)
+	if err := updater.Apply(ctx, release); err != nil {
+		fmt.Fprintf(os.Stderr, "Erro na atualização: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✔ Sopro atualizado com sucesso para %s!\n", release.TagName)
 }
