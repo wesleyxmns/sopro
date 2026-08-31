@@ -10,32 +10,36 @@ import (
 	"github.com/wesleyxmns/sopro/internal/control"
 	"github.com/wesleyxmns/sopro/internal/memory"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/updater"
+	"github.com/wesleyxmns/sopro/internal/version"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type Model struct {
-	service       *app.Service
-	Snapshot      app.Snapshot
-	Capabilities  app.Capabilities
-	Cursor        int
-	Width         int
-	Height        int
-	Message       string
-	Loading       bool
-	Acting        bool
-	ShowSplash    bool
-	Pending       *control.Request
-	ActiveAction  *control.Request
-	viewport      viewport.Model
-	theme         Theme
-	memoryHistory []memory.Snapshot
-	allProcesses  []processdomain.Info
-	query         processdomain.Query
-	groupMode     processGroupMode
-	processDepth  map[processdomain.Identity]int
-	Searching     bool
+	service         *app.Service
+	Snapshot        app.Snapshot
+	Capabilities    app.Capabilities
+	Cursor          int
+	Width           int
+	Height          int
+	Message         string
+	Loading         bool
+	Acting          bool
+	ShowSplash      bool
+	Pending         *control.Request
+	ActiveAction    *control.Request
+	UpdateAvailable *updater.ReleaseInfo
+	PendingUpdate   *updater.ReleaseInfo
+	viewport        viewport.Model
+	theme           Theme
+	memoryHistory   []memory.Snapshot
+	allProcesses    []processdomain.Info
+	query           processdomain.Query
+	groupMode       processGroupMode
+	processDepth    map[processdomain.Identity]int
+	Searching       bool
 }
 
 type processGroupMode int
@@ -72,7 +76,12 @@ func NewModel(service *app.Service, options ...Option) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadSnapshotCmd(m.service), scheduleTick(), finishSplashCmd())
+	return tea.Batch(
+		loadSnapshotCmd(m.service),
+		scheduleTick(),
+		finishSplashCmd(),
+		checkUpdateCmd(version.Version),
+	)
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -126,6 +135,24 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Loading = true
 		return m, loadSnapshotCmd(m.service)
+
+	case updateCheckedMsg:
+		if msg.err == nil && msg.isNew && msg.release != nil {
+			m.UpdateAvailable = msg.release
+		}
+		return m, nil
+
+	case updateAppliedMsg:
+		m.Acting = false
+		m.ActiveAction = nil
+		if msg.err != nil {
+			m.Message = "Falha na atualização: " + msg.err.Error()
+			return m, nil
+		}
+		m.UpdateAvailable = nil
+		m.PendingUpdate = nil
+		m.Message = fmt.Sprintf("✔ Sopro atualizado para %s! Reinicie para carregar.", msg.release.TagName)
+		return m, nil
 	}
 
 	return m, nil
@@ -152,6 +179,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "n":
 			m.Pending = nil
 			m.Message = "Ação cancelada"
+		}
+		return m, nil
+	}
+	if m.PendingUpdate != nil {
+		switch key {
+		case "enter", "y":
+			rel := m.PendingUpdate
+			m.PendingUpdate = nil
+			m.Acting = true
+			m.ActiveAction = &control.Request{Action: "sopro.update"}
+			m.Message = "Baixando e instalando atualização " + rel.TagName + "…"
+			return m, applyUpdateCmd(rel)
+		case "esc", "n":
+			m.PendingUpdate = nil
+			m.Message = "Atualização cancelada"
 		}
 		return m, nil
 	}
@@ -300,6 +342,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "g":
 		m.groupMode = (m.groupMode + 1) % 3
 		m.rebuildProcessView()
+	case "U":
+		if m.UpdateAvailable != nil {
+			m.PendingUpdate = m.UpdateAvailable
+			m.Message = fmt.Sprintf("Confirmar atualização do Sopro para %s?", m.UpdateAvailable.TagName)
+		}
 	case "esc":
 		m.Message = ""
 	}

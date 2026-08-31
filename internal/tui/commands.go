@@ -7,6 +7,7 @@ import (
 	"github.com/wesleyxmns/sopro/internal/app"
 	"github.com/wesleyxmns/sopro/internal/control"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/updater"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -63,5 +64,24 @@ func executeActionCmd(service *app.Service, request control.Request) tea.Cmd {
 		}
 		result.Finished = time.Now()
 		return actionFinishedMsg{result: result, err: err}
+	}
+}
+
+func checkUpdateCmd(currentVersion string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
+		defer cancel()
+		checker := updater.NewChecker()
+		release, isNew, err := checker.Check(ctx, currentVersion, false)
+		return updateCheckedMsg{release: release, isNew: isNew, err: err}
+	}
+}
+
+func applyUpdateCmd(release *updater.ReleaseInfo) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		err := updater.Apply(ctx, release)
+		return updateAppliedMsg{release: release, err: err}
 	}
 }

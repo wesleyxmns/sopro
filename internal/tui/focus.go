@@ -70,6 +70,37 @@ func (m Model) renderConfirmationFocus(background string) string {
 	return overlayCentered(background, panel, m.Width, m.Height)
 }
 
+func (m Model) renderUpdateConfirmationFocus(background string) string {
+	rel := m.PendingUpdate
+	if rel == nil {
+		return ""
+	}
+
+	modalWidth := min(max(m.Width-10, 34), 64)
+	innerWidth := max(modalWidth-6, 20)
+	accent := m.theme.Focus
+
+	lines := []string{
+		m.theme.Brand.Render(wordmark) + "  " + accent.Render("≋ ATUALIZAÇÃO DISPONÍVEL"),
+		m.theme.Divider.Render(strings.Repeat("─", innerWidth)),
+		m.theme.Strong.Render("ATUALIZAR O SOPRO"),
+		"Baixa e instala a nova versão oficial diretamente do GitHub.",
+		"",
+		m.theme.Muted.Render("Versão disponível"),
+		fmt.Sprintf("%s (publicado em %s)", m.theme.Good.Render(rel.TagName), m.theme.Muted.Render(rel.PublishedAt.Format("02/01/2006"))),
+		"",
+		accent.Render("[ enter / y ] ATUALIZAR") + "    " + m.theme.Muted.Render("[ esc / n ] cancelar"),
+	}
+
+	panelStyle := lipgloss.NewStyle().
+		Width(innerWidth).
+		Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent.GetForeground())
+	panel := panelStyle.Render(strings.Join(lines, "\n"))
+	return overlayCentered(background, panel, m.Width, m.Height)
+}
+
 func (m Model) renderExecutionFocus(background string) string {
 	action := control.Action("")
 	if m.ActiveAction != nil {
