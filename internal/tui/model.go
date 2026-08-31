@@ -290,7 +290,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Pending = &control.Request{Action: control.ActionCDPCloseBlank, Process: selected.Identity}
 			m.Message = fmt.Sprintf("Confirmar fechamento de abas vazias via CDP (PID %d)?", selected.PID)
 		}
-	case "u":
+	case "a":
 		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryBrowser || hasContextTag(selected.Contexts, processdomain.ContextBrowserDebug)) {
 			m.Pending = &control.Request{Action: control.ActionCDPDiscardInactive, Process: selected.Identity}
 			m.Message = fmt.Sprintf("Confirmar suspensão de abas inativas via CDP (PID %d)?", selected.PID)
@@ -342,7 +342,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "g":
 		m.groupMode = (m.groupMode + 1) % 3
 		m.rebuildProcessView()
-	case "U":
+	case "u", "U":
 		if m.UpdateAvailable != nil {
 			m.PendingUpdate = m.UpdateAvailable
 			m.Message = fmt.Sprintf("Confirmar atualização do Sopro para %s?", m.UpdateAvailable.TagName)

@@ -88,7 +88,7 @@ func (m Model) renderOperationalIndicators(width int) string {
 	telemetry, telemetryStyle := m.telemetryStatus()
 	badge := ""
 	if m.UpdateAvailable != nil {
-		badge = m.theme.Warning.Render("≋ "+m.UpdateAvailable.TagName+" [U]") + m.theme.Divider.Render(" · ")
+		badge = m.theme.Warning.Render("≋ "+m.UpdateAvailable.TagName+" [u]") + m.theme.Divider.Render(" · ")
 	}
 	if width < 26 {
 		return badge + pressureStyle.Render("●") + m.theme.Divider.Render(" · ") + telemetryStyle.Render("◌")
@@ -564,7 +564,7 @@ func (m Model) renderPanelActions(proc processdomain.Info, width int) string {
 			lipgloss.Top,
 			lipgloss.NewStyle().Width(columnWidth).Render(m.renderKeyHint(keyHint{"b", "fechar vazias"})),
 			"  ",
-			m.renderKeyHint(keyHint{"u", "suspender abas"}),
+			m.renderKeyHint(keyHint{"a", "suspender abas"}),
 		)
 		lines = append(lines, ansi.Truncate(third, width, ""))
 	} else if proc.Category == processdomain.CategoryJVM || hasContextTag(proc.Contexts, processdomain.ContextTag("jvm-runtime")) {
