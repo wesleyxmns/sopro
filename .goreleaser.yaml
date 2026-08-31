@@ -1,0 +1,57 @@
+# GoReleaser configuration for Sopro
+# Reference: https://goreleaser.com
+
+version: 2
+
+project_name: sopro
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: sopro
+    main: ./cmd/sopro
+    binary: sopro
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/wesleyxmns/sopro/internal/version.Version={{.Version}}
+      - -X github.com/wesleyxmns/sopro/internal/version.Commit={{.Commit}}
+      - -X github.com/wesleyxmns/sopro/internal/version.BuildDate={{.Date}}
+      - -X github.com/wesleyxmns/sopro/internal/version.BuiltBy=goreleaser
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "merge conflict"
