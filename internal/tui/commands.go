@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/wesleyxmns/sopro/internal/app"
@@ -67,21 +68,46 @@ func executeActionCmd(service *app.Service, request control.Request) tea.Cmd {
 	}
 }
 
-func checkUpdateCmd(currentVersion string) tea.Cmd {
+func cachedUpdateCmd(currentVersion string) tea.Cmd {
+	return func() tea.Msg {
+		checker := updater.NewChecker()
+		release, isNew, _, _ := checker.Cached(currentVersion)
+		return updateCheckedMsg{release: release, isNew: isNew, source: updateCheckCache}
+	}
+}
+
+func checkUpdateCmd(currentVersion string, source updateCheckSource) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
 		checker := updater.NewChecker()
-		release, isNew, err := checker.Check(ctx, currentVersion, false)
-		return updateCheckedMsg{release: release, isNew: isNew, err: err}
+		release, isNew, err := checker.Check(ctx, currentVersion, true)
+		return updateCheckedMsg{release: release, isNew: isNew, err: err, source: source}
 	}
 }
 
 func applyUpdateCmd(release *updater.ReleaseInfo) tea.Cmd {
+	executable, requiresElevation, err := updater.UpdateTarget()
+	if err != nil {
+		return func() tea.Msg { return updateAppliedMsg{release: release, err: err} }
+	}
+	if requiresElevation {
+		process, processErr := updater.ElevatedCommand(executable, "update")
+		if processErr != nil {
+			return func() tea.Msg { return updateAppliedMsg{release: release, err: processErr} }
+		}
+		return tea.ExecProcess(process, func(runErr error) tea.Msg {
+			if runErr != nil {
+				runErr = fmt.Errorf("não foi possível concluir a atualização com permissão administrativa: %w", runErr)
+			}
+			return updateAppliedMsg{release: release, err: runErr}
+		})
+	}
+
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		err := updater.Apply(ctx, release)
-		return updateAppliedMsg{release: release, err: err}
+		applyErr := updater.Apply(ctx, release)
+		return updateAppliedMsg{release: release, err: applyErr}
 	}
 }

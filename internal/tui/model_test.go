@@ -354,6 +354,29 @@ func TestUpdateCheckedMsg_NoUpdateDoesNothing(t *testing.T) {
 	}
 }
 
+func TestBackgroundUpdateCheckRevalidatesCachedResult(t *testing.T) {
+	m, _ := newTestModel()
+	cached := &updater.ReleaseInfo{TagName: "v0.2.3", Version: "0.2.3"}
+
+	updated, _ := m.Update(updateCheckedMsg{release: cached, isNew: true, source: updateCheckCache})
+	m = updated.(Model)
+	if m.UpdateAvailable == nil {
+		t.Fatal("expected cached update to be shown immediately")
+	}
+
+	updated, _ = m.Update(updateCheckedMsg{isNew: false, source: updateCheckBackground})
+	m = updated.(Model)
+	if m.CheckingUpdate || m.UpdateAvailable != nil {
+		t.Fatal("background result did not replace stale cached state")
+	}
+
+	updated, _ = m.Update(updateCheckedMsg{release: cached, isNew: true, source: updateCheckCache})
+	m = updated.(Model)
+	if m.UpdateAvailable != nil {
+		t.Fatal("late cache result replaced an already revalidated state")
+	}
+}
+
 func TestUpdateKeyU_SetsPendingUpdate(t *testing.T) {
 	m, _ := newTestModel()
 	m.Width, m.Height = 120, 40
@@ -383,15 +406,21 @@ func TestUpdateKeyU_SetsPendingUpdate(t *testing.T) {
 	}
 }
 
-func TestUpdateKeyU_NoopWithoutUpdateAvailable(t *testing.T) {
+func TestUpdateKeyUChecksAgainWithoutUpdateAvailable(t *testing.T) {
 	m, _ := newTestModel()
 	m.Width, m.Height = 120, 40
 	m.ShowSplash = false
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")})
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")})
 	m = updated.(Model)
 	if m.PendingUpdate != nil {
 		t.Fatal("expected PendingUpdate to remain nil when no update available")
+	}
+	if command == nil || !m.CheckingUpdate {
+		t.Fatal("expected U to force a new update check")
+	}
+	if !strings.Contains(m.Message, "Verificando atualizações") {
+		t.Fatalf("expected visible checking feedback, got %q", m.Message)
 	}
 }
 
@@ -439,5 +468,16 @@ func TestUpdateAppliedMsg_Error(t *testing.T) {
 	m = updated.(Model)
 	if !strings.Contains(m.Message, "permission denied") {
 		t.Fatalf("expected error message, got %q", m.Message)
+	}
+}
+
+func TestUpdateAppliedMsg_PermissionErrorShowsAction(t *testing.T) {
+	m, _ := newTestModel()
+	release := &updater.ReleaseInfo{TagName: "v0.2.3"}
+
+	updated, _ := m.Update(updateAppliedMsg{release: release, err: updater.ErrPermissionDenied})
+	m = updated.(Model)
+	if !strings.Contains(m.Message, "sudo sopro update") {
+		t.Fatalf("expected actionable permission guidance, got %q", m.Message)
 	}
 }

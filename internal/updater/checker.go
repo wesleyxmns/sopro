@@ -65,6 +65,20 @@ func (c *Checker) Check(ctx context.Context, currentVersion string, force bool) 
 	return release, isNew, nil
 }
 
+// Cached retorna a release armazenada localmente enquanto o cache ainda estiver válido.
+// Ele não realiza acesso à rede e permite que interfaces exibam o estado conhecido
+// imediatamente enquanto uma revalidação acontece em segundo plano.
+func (c *Checker) Cached(currentVersion string) (*ReleaseInfo, bool, time.Time, bool) {
+	cached, ok := c.readCache()
+	if !ok || cached.LatestRelease == nil {
+		return nil, false, time.Time{}, false
+	}
+	return cached.LatestRelease,
+		IsNewer(cached.LatestRelease.Version, currentVersion),
+		cached.LastCheckedAt,
+		true
+}
+
 type githubReleasePayload struct {
 	TagName     string    `json:"tag_name"`
 	HTMLURL     string    `json:"html_url"`

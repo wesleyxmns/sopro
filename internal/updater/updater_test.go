@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -73,6 +74,77 @@ func TestCacheStateReadAndWrite(t *testing.T) {
 	}
 	if cached.LatestRelease.Version != "0.2.0" {
 		t.Fatalf("expected cached version 0.2.0, got %s", cached.LatestRelease.Version)
+	}
+}
+
+func TestCheckerCachedReturnsReleaseWithoutNetwork(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "update_cache.json")
+	checker := &Checker{CachePath: cachePath}
+	release := &ReleaseInfo{Version: "0.2.3", TagName: "v0.2.3"}
+	checker.writeCache(release)
+
+	cached, isNew, checkedAt, ok := checker.Cached("0.2.1")
+	if !ok || cached == nil {
+		t.Fatal("expected a valid cached release")
+	}
+	if cached.TagName != "v0.2.3" || !isNew {
+		t.Fatalf("unexpected cached result: release=%+v isNew=%v", cached, isNew)
+	}
+	if checkedAt.IsZero() {
+		t.Fatal("expected cache timestamp")
+	}
+}
+
+func TestUpdateTargetForRunningTestBinaryIsWritable(t *testing.T) {
+	path, requiresElevation, err := UpdateTarget()
+	if err != nil {
+		t.Fatalf("UpdateTarget() error = %v", err)
+	}
+	if path == "" {
+		t.Fatal("UpdateTarget() returned an empty path")
+	}
+	if requiresElevation {
+		t.Fatalf("temporary test binary unexpectedly requires elevation: %s", path)
+	}
+}
+
+func TestUpdateTargetDetectsDirectoryWithoutWriteAccess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission model differs on Windows")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0755)
+
+	probe, probeErr := os.CreateTemp(dir, "permission-probe-*")
+	if probeErr == nil {
+		probe.Close()
+		os.Remove(probe.Name())
+		t.Skip("test process can bypass directory permissions")
+	}
+
+	requiresElevation, err := updateTargetRequiresElevation(filepath.Join(dir, "sopro"))
+	if err != nil {
+		t.Fatalf("updateTargetRequiresElevation() error = %v", err)
+	}
+	if !requiresElevation {
+		t.Fatal("expected a protected install directory to require elevation")
+	}
+}
+
+func TestElevatedCommandUsesExactExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sudo is not used on Windows")
+	}
+	const executable = "/usr/local/bin/sopro"
+	command, err := ElevatedCommand(executable, "update")
+	if err != nil {
+		t.Skipf("sudo is unavailable: %v", err)
+	}
+	if len(command.Args) != 3 || command.Args[1] != executable || command.Args[2] != "update" {
+		t.Fatalf("unexpected elevated command arguments: %q", command.Args)
 	}
 }
 

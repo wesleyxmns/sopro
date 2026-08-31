@@ -88,9 +88,18 @@ func (m Model) renderUpdateConfirmationFocus(background string) string {
 		"",
 		m.theme.Muted.Render("Versão disponível"),
 		fmt.Sprintf("%s (publicado em %s)", m.theme.Good.Render(rel.TagName), m.theme.Muted.Render(rel.PublishedAt.Format("02/01/2006"))),
-		"",
-		accent.Render("[ enter / y ] ATUALIZAR") + "    " + m.theme.Muted.Render("[ esc / n ] cancelar"),
 	}
+	if m.UpdateNeedsElevation {
+		lines = append(lines,
+			"",
+			m.theme.Warning.Render("Será solicitada permissão administrativa pelo sudo."),
+			m.theme.Muted.Render("A senha é recebida diretamente pelo sistema."),
+		)
+	}
+	lines = append(lines,
+		"",
+		accent.Render("[ enter / y ] ATUALIZAR")+"    "+m.theme.Muted.Render("[ esc / n ] cancelar"),
+	)
 
 	panelStyle := lipgloss.NewStyle().
 		Width(innerWidth).
@@ -107,6 +116,14 @@ func (m Model) renderExecutionFocus(background string) string {
 		action = m.ActiveAction.Action
 	}
 	title, _ := actionCopy(action)
+	detail := "revalidando identidade e aplicando a ação…"
+	if action == control.Action("sopro.update") {
+		title = "ATUALIZANDO O SOPRO"
+		detail = "validando a release e substituindo o binário…"
+		if m.UpdateNeedsElevation {
+			detail = "aguardando permissão administrativa para instalar…"
+		}
+	}
 	if title == "" {
 		title = "EXECUTANDO AÇÃO"
 	}
@@ -115,7 +132,7 @@ func (m Model) renderExecutionFocus(background string) string {
 		m.theme.Brand.Render(wordmark),
 		"",
 		m.theme.Focus.Render("◌ "+title),
-		m.theme.Muted.Render("revalidando identidade e aplicando a ação…"),
+		m.theme.Muted.Render(detail),
 		"",
 		m.theme.Muted.Render("q sair"),
 	)

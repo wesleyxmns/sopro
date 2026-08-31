@@ -228,6 +228,29 @@ func handleUpdateCommand(args []string) {
 	checkOnly := updateFlags.Bool("check", false, "apenas verifica se há atualizações disponíveis sem instalar")
 	updateFlags.BoolVar(checkOnly, "c", false, "apenas verifica se há atualizações disponíveis sem instalar (atalho)")
 	_ = updateFlags.Parse(args)
+	if !*checkOnly {
+		executable, requiresElevation, err := updater.UpdateTarget()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Erro ao preparar atualização: %v\n", err)
+			os.Exit(1)
+		}
+		if requiresElevation {
+			fmt.Println("A instalação atual requer permissão administrativa; solicitando via sudo...")
+			command, commandErr := updater.ElevatedCommand(executable, append([]string{"update"}, args...)...)
+			if commandErr != nil {
+				fmt.Fprintf(os.Stderr, "Erro ao preparar atualização: %v\n", commandErr)
+				os.Exit(1)
+			}
+			command.Stdin = os.Stdin
+			command.Stdout = os.Stdout
+			command.Stderr = os.Stderr
+			if commandErr = command.Run(); commandErr != nil {
+				fmt.Fprintf(os.Stderr, "Erro na atualização com permissão administrativa: %v\n", commandErr)
+				os.Exit(1)
+			}
+			return
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
