@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/wesleyxmns/sopro/internal/app"
@@ -16,6 +17,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+const snapshotFailurePrefix = "Falha ao atualizar: "
 
 type Model struct {
 	service              *app.Service
@@ -113,11 +116,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case snapshotLoadedMsg:
 		m.Loading = false
 		if msg.err != nil {
-			m.Message = "Falha ao atualizar: " + msg.err.Error()
+			m.Message = snapshotFailurePrefix + msg.err.Error()
 			return m, nil
 		}
 		m.applySnapshot(msg.snapshot)
-		m.Message = ""
+		if !isUpdaterMessage(m.Message) {
+			m.Message = ""
+		}
 		return m, nil
 
 	case actionFinishedMsg:
@@ -190,6 +195,28 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func isUpdaterMessage(message string) bool {
+	prefixes := []string{
+		"Verificando atualizações",
+		"Falha ao verificar atualizações",
+		"↑ Nova versão",
+		"✔ O Sopro já está",
+		"Confirmar atualização do Sopro",
+		"Baixando e instalando atualização",
+		"Atualização cancelada",
+		"Não foi possível preparar a atualização",
+		"Atualização requer permissão administrativa",
+		"Falha na atualização",
+		"✔ Sopro atualizado",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(message, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
