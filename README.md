@@ -1,9 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="Sopro Logo" width="480" />
-
-# Sopro ≋
-*Observando a memória com calma e precisão.*
+<img src="assets/logo.svg" alt="Sopro Logo" width="500" />
 
 </div>
 
