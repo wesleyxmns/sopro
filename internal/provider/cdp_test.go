@@ -12,14 +12,14 @@ import (
 )
 
 type mockHTTPClient struct {
-	responses map[string]*http.Response
+	responses map[string]string
 	errors    map[string]error
 	requests  []*http.Request
 }
 
 func newMockHTTPClient() *mockHTTPClient {
 	return &mockHTTPClient{
-		responses: make(map[string]*http.Response),
+		responses: make(map[string]string),
 		errors:    make(map[string]error),
 	}
 }
@@ -30,17 +30,13 @@ func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	if err, ok := m.errors[url]; ok {
 		return nil, err
 	}
-	if resp, ok := m.responses[url]; ok {
-		return resp, nil
+	if body, ok := m.responses[url]; ok {
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+		}, nil
 	}
 	return nil, errors.New("request failed: unmocked url " + url)
-}
-
-func stringResponse(status int, body string) *http.Response {
-	return &http.Response{
-		StatusCode: status,
-		Body:       io.NopCloser(bytes.NewBufferString(body)),
-	}
 }
 
 func TestCDPProviderSupports(t *testing.T) {
@@ -64,7 +60,7 @@ func TestCDPProviderDetect(t *testing.T) {
 		{"id": "tab-2", "title": "Blank", "type": "page", "url": "about:blank"},
 		{"id": "worker-1", "title": "ServiceWorker", "type": "service_worker", "url": "https://example.com/sw.js"}
 	]`
-	client.responses["http://127.0.0.1:9222/json/list"] = stringResponse(200, jsonList)
+	client.responses["http://127.0.0.1:9222/json/list"] = jsonList
 
 	p := NewCDPProvider(client)
 	proc := processdomain.Info{
@@ -93,8 +89,8 @@ func TestCDPProviderActionsAndExecute(t *testing.T) {
 		{"id": "tab-1", "title": "Docs", "type": "page", "url": "https://golang.org"},
 		{"id": "tab-2", "title": "Blank", "type": "page", "url": "about:blank"}
 	]`
-	client.responses["http://127.0.0.1:9222/json/list"] = stringResponse(200, jsonList)
-	client.responses["http://127.0.0.1:9222/json/close/tab-2"] = stringResponse(200, "Target is closing")
+	client.responses["http://127.0.0.1:9222/json/list"] = jsonList
+	client.responses["http://127.0.0.1:9222/json/close/tab-2"] = "Target is closing"
 
 	p := NewCDPProvider(client)
 	proc := processdomain.Info{
@@ -102,13 +98,16 @@ func TestCDPProviderActionsAndExecute(t *testing.T) {
 	}
 
 	actions := p.Actions(context.Background(), proc)
-	if len(actions) != 1 || actions[0].ID != "cdp.close_blank" {
+	if len(actions) != 2 || actions[0].ID != "cdp.close_blank" || actions[1].ID != "cdp.discard_inactive" {
 		t.Fatalf("actions = %+v", actions)
 	}
 
 	ctx := context.Background()
 	if err := p.Execute(ctx, "cdp.close_blank", proc); err != nil {
 		t.Fatalf("failed to execute cdp.close_blank: %v", err)
+	}
+	if err := p.Execute(ctx, "cdp.discard_inactive", proc); err != nil {
+		t.Fatalf("failed to execute cdp.discard_inactive: %v", err)
 	}
 	if len(client.requests) < 2 {
 		t.Fatalf("expected at least 2 HTTP requests, got %d", len(client.requests))

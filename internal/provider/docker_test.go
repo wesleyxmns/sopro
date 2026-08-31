@@ -140,6 +140,7 @@ func TestDockerProviderActionsAndExecute(t *testing.T) {
 	containerID := "aabbccddeeff001122334455"
 	runner.responses[fmt.Sprintf("docker stop %s", containerID)] = []byte("stopped\n")
 	runner.responses[fmt.Sprintf("docker restart %s", containerID)] = []byte("restarted\n")
+	runner.responses[fmt.Sprintf("docker pause %s", containerID)] = []byte("paused\n")
 
 	p := NewDockerProvider(runner)
 	proc := processdomain.Info{
@@ -148,10 +149,10 @@ func TestDockerProviderActionsAndExecute(t *testing.T) {
 	}
 
 	actions := p.Actions(context.Background(), proc)
-	if len(actions) != 2 {
-		t.Fatalf("expected 2 actions, got %d", len(actions))
+	if len(actions) != 3 {
+		t.Fatalf("expected 3 actions, got %d", len(actions))
 	}
-	if actions[0].ID != "docker.stop" || actions[1].ID != "docker.restart" {
+	if actions[0].ID != "docker.stop" || actions[1].ID != "docker.restart" || actions[2].ID != "docker.pause" {
 		t.Fatalf("actions = %+v", actions)
 	}
 
@@ -162,8 +163,104 @@ func TestDockerProviderActionsAndExecute(t *testing.T) {
 	if err := p.Execute(ctx, "docker.restart", proc); err != nil {
 		t.Fatalf("docker.restart failed: %v", err)
 	}
+	if err := p.Execute(ctx, "docker.pause", proc); err != nil {
+		t.Fatalf("docker.pause failed: %v", err)
+	}
 
 	if err := p.Execute(ctx, "unknown.action", proc); err == nil {
 		t.Fatal("expected error on unknown action")
 	}
 }
+
+func TestDockerProviderPIDMapping(t *testing.T) {
+	runner := newMockCommandRunner()
+	runner.responses["docker ps -a -q"] = []byte("c1d2e3f4a5b6\n")
+	inspectJSON := `[{
+		"Id": "c1d2e3f4a5b67890abcdef123456",
+		"Name": "/sangati_postgres",
+		"State": {
+			"Pid": 12345,
+			"Status": "running",
+			"Running": true
+		},
+		"Config": {
+			"Image": "postgres:15-alpine",
+			"Labels": {
+				"com.docker.compose.project": "sangati",
+				"com.docker.compose.service": "postgres"
+			}
+		}
+	}]`
+	runner.responses["docker inspect c1d2e3f4a5b6"] = []byte(inspectJSON)
+
+	p := NewDockerProvider(runner)
+	proc := processdomain.Info{
+		Identity: processdomain.Identity{PID: 12345},
+		Command:  "postgres",
+	}
+
+	contexts := p.Detect(context.Background(), proc)
+	if len(contexts) != 1 {
+		t.Fatalf("expected 1 context from PID mapping, got %d", len(contexts))
+	}
+	if contexts[0].Tag != processdomain.ContextDockerCompose {
+		t.Fatalf("expected ContextDockerCompose, got %v", contexts[0].Tag)
+	}
+	if contexts[0].Details["container_name"] != "sangati_postgres" {
+		t.Fatalf("container_name = %q; want sangati_postgres", contexts[0].Details["container_name"])
+	}
+	if contexts[0].Details["image"] != "postgres:15-alpine" {
+		t.Fatalf("image = %q; want postgres:15-alpine", contexts[0].Details["image"])
+	}
+
+	actions := p.Actions(context.Background(), proc)
+	if len(actions) != 3 {
+		t.Fatalf("expected 3 actions for mapped container, got %d", len(actions))
+	}
+}
+
+func TestDockerProviderStoppedContainersAndStart(t *testing.T) {
+	runner := newMockCommandRunner()
+	runner.responses["docker ps -a -q"] = []byte("stopped123\n")
+	inspectJSON := `[{
+		"Id": "stopped1234567890abcdef123456",
+		"Name": "/stopped_redis",
+		"State": {
+			"Pid": 0,
+			"Status": "exited",
+			"Running": false
+		},
+		"Config": {
+			"Image": "redis:7-alpine",
+			"Labels": {}
+		}
+	}]`
+	runner.responses["docker inspect stopped123"] = []byte(inspectJSON)
+	runner.responses["docker start stopped_redis"] = []byte("stopped_redis\n")
+
+	p := NewDockerProvider(runner)
+	containers := p.AllContainers(context.Background())
+	if len(containers) != 1 {
+		t.Fatalf("expected 1 container, got %d", len(containers))
+	}
+	if containers[0].Name != "stopped_redis" || containers[0].State != "exited" {
+		t.Fatalf("unexpected container: %+v", containers[0])
+	}
+
+	proc := processdomain.Info{
+		ContainerName: "stopped_redis",
+		State:         processdomain.StateStopped,
+		Category:      processdomain.CategoryContainer,
+	}
+
+	actions := p.Actions(context.Background(), proc)
+	if len(actions) != 1 || actions[0].ID != "docker.start" {
+		t.Fatalf("expected 1 docker.start action, got %+v", actions)
+	}
+
+	if err := p.Execute(context.Background(), "docker.start", proc); err != nil {
+		t.Fatalf("docker.start failed: %v", err)
+	}
+}
+
+

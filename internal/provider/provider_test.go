@@ -70,8 +70,42 @@ func TestRegistryDetectAndActions(t *testing.T) {
 		t.Fatalf("expected executed 'docker-stop', got %q", p1.executed)
 	}
 
-	if err := registry.Execute(ctx, "nonexistent", proc); err != ErrActionNotFound {
-		t.Fatalf("expected ErrActionNotFound, got %v", err)
+	if err := registry.Execute(ctx, "nonexistent", proc); err != ErrIncompatibleAction && err != ErrActionNotFound {
+		t.Fatalf("expected ErrIncompatibleAction or ErrActionNotFound, got %v", err)
+	}
+}
+
+func TestRegistryActionScopeAndSupportsAction(t *testing.T) {
+	dockerProvider := &mockProvider{
+		name:     "docker",
+		supports: true,
+		actions: []Action{
+			{ID: "docker.stop", Scope: ScopeContainer, Label: "Parar container"},
+		},
+	}
+	cdpProvider := &mockProvider{
+		name:     "cdp",
+		supports: false,
+		actions: []Action{
+			{ID: "cdp.close_blank", Scope: ScopeBrowser, Label: "Fechar abas vazias"},
+		},
+	}
+
+	registry := NewRegistry(dockerProvider, cdpProvider)
+	ctx := context.Background()
+	dockerProc := processdomain.Info{Identity: processdomain.Identity{PID: 100}}
+
+	if !registry.SupportsAction(ctx, "docker.stop", dockerProc) {
+		t.Fatal("expected SupportsAction to return true for docker.stop on dockerProc")
+	}
+	if registry.SupportsAction(ctx, "cdp.close_blank", dockerProc) {
+		t.Fatal("expected SupportsAction to return false for cdp.close_blank on dockerProc")
+	}
+
+	// Executing cdp action on docker process must return ErrIncompatibleAction
+	err := registry.Execute(ctx, "cdp.close_blank", dockerProc)
+	if err != ErrIncompatibleAction {
+		t.Fatalf("expected ErrIncompatibleAction, got %v", err)
 	}
 }
 
