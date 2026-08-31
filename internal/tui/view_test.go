@@ -427,4 +427,80 @@ func TestWideDetailsCardRendersDiscoveredContexts(t *testing.T) {
 	}
 }
 
+func TestUltrawideGridExpandsUserAndProcessColumns(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, backend := newTestModel()
+	model.Width = 200
+	model.Height = 35
+	model.ShowSplash = false
+
+	snapshot := backend.snapshot
+	snapshot.Processes[0].User = "wesleyximenes"
+	snapshot.Processes[0].CommandLine = "chrome --type=renderer --field-trial-handle=0"
+	model.applySnapshot(snapshot)
+
+	view := model.View()
+	if !strings.Contains(view, "wesleyximenes") {
+		t.Fatalf("ultrawide view truncated username: %s", view)
+	}
+	if !strings.Contains(view, "--type=renderer") {
+		t.Fatalf("ultrawide view omitted command line arguments: %s", view)
+	}
+}
+
+func TestCategoryTabsRenderAndSwitch(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, backend := newTestModel()
+	model.Width = 140
+	model.Height = 35
+	model.ShowSplash = false
+	model.applySnapshot(backend.snapshot)
+
+	view := model.View()
+	if !strings.Contains(view, "1:Todos") || !strings.Contains(view, "2:Navegadores") {
+		t.Fatalf("view omitted category tabs: %s", view)
+	}
+
+	// Press key "2" to filter by Browser
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	m := updated.(Model)
+	if m.query.Category != processdomain.CategoryBrowser {
+		t.Fatalf("query.Category = %q; want browser", m.query.Category)
+	}
+
+	// Press tab to cycle
+	updated2, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := updated2.(Model)
+	if m2.query.Category != processdomain.CategoryContainer {
+		t.Fatalf("query.Category after tab = %q; want container", m2.query.Category)
+	}
+}
+
+func TestContainerEntityRendering(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, backend := newTestModel()
+	model.Width = 140
+	model.Height = 35
+	model.ShowSplash = false
+
+	snapshot := backend.snapshot
+	snapshot.Processes[0].Category = processdomain.CategoryContainer
+	snapshot.Processes[0].ContainerName = "sangati_postgres"
+	snapshot.Processes[0].ImageName = "postgres:15-alpine"
+	snapshot.Processes[0].Command = "postgres"
+	snapshot.Processes[0].CommandLine = "docker-entrypoint.sh postgres"
+	model.applySnapshot(snapshot)
+
+	view := model.View()
+	if !strings.Contains(view, "sangati_postgres") {
+		t.Fatalf("table view omitted ContainerName: %s", view)
+	}
+	if !strings.Contains(view, "IMAGEM") || !strings.Contains(view, "postgres:15-alpine") {
+		t.Fatalf("details view omitted ImageName: %s", view)
+	}
+}
+
+
+
+
 
