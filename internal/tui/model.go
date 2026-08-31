@@ -427,6 +427,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
+	case tea.KeyUp:
+		m.moveCursor(-1)
+	case tea.KeyDown:
+		m.moveCursor(1)
 	case tea.KeyEnter:
 		m.Searching = false
 		m.Message = ""
