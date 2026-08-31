@@ -360,10 +360,23 @@ func TestUpdateKeyU_SetsPendingUpdate(t *testing.T) {
 	m.ShowSplash = false
 	m.UpdateAvailable = &updater.ReleaseInfo{TagName: "v0.2.0"}
 
+	// Test uppercase U
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")})
 	m = updated.(Model)
 	if m.PendingUpdate == nil {
 		t.Fatal("expected PendingUpdate to be set after pressing U")
+	}
+	if !strings.Contains(m.Message, "v0.2.0") {
+		t.Fatalf("expected message to contain version, got %q", m.Message)
+	}
+
+	// Cancel and test lowercase u
+	m.PendingUpdate = nil
+	m.Message = ""
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	m = updated.(Model)
+	if m.PendingUpdate == nil {
+		t.Fatal("expected PendingUpdate to be set after pressing u (lowercase)")
 	}
 	if !strings.Contains(m.Message, "v0.2.0") {
 		t.Fatalf("expected message to contain version, got %q", m.Message)
