@@ -12,6 +12,7 @@ var defaultHints = []keyHint{
 	{"x", "encerrar"},
 	{"k", "forçar"},
 	{"c", "limpar cache"},
+	{"T", "limpeza total"},
 	{"/", "buscar"},
 	{"s", "ordenar"},
 	{"g", "agrupar"},

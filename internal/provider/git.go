@@ -6,12 +6,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
 )
 
 type GitProvider struct {
-	runner CommandRunner
+	runner    CommandRunner
+	mu        sync.RWMutex
+	repoByDir map[string]cachedRepo
+	cacheTTL  time.Duration
+}
+
+type cachedRepo struct {
+	repoDir   string
+	branch    string
+	found     bool
+	fetchedAt time.Time
 }
 
 func NewGitProvider(runner ...CommandRunner) *GitProvider {
@@ -19,7 +31,7 @@ func NewGitProvider(runner ...CommandRunner) *GitProvider {
 	if len(runner) > 0 && runner[0] != nil {
 		r = runner[0]
 	}
-	return &GitProvider{runner: r}
+	return &GitProvider{runner: r, repoByDir: make(map[string]cachedRepo), cacheTTL: 30 * time.Second}
 }
 
 func (g *GitProvider) Name() string {
@@ -43,7 +55,7 @@ func (g *GitProvider) Detect(ctx context.Context, proc processdomain.Info) []Con
 		return nil
 	}
 
-	repoDir, branch := g.findRepoInfo(ctx, targetDir)
+	repoDir, branch := g.cachedRepoInfo(ctx, targetDir)
 	if repoDir == "" {
 		return nil
 	}
@@ -65,6 +77,26 @@ func (g *GitProvider) Detect(ctx context.Context, proc processdomain.Info) []Con
 			},
 		},
 	}
+}
+
+// cachedRepoInfo memoizes repo lookups per directory, including negative
+// results. Repository metadata only feeds labels, so a longer TTL than the
+// snapshot tick is safe.
+func (g *GitProvider) cachedRepoInfo(ctx context.Context, dir string) (string, string) {
+	g.mu.RLock()
+	entry, ok := g.repoByDir[dir]
+	g.mu.RUnlock()
+	if ok && time.Since(entry.fetchedAt) < g.cacheTTL {
+		if !entry.found {
+			return "", ""
+		}
+		return entry.repoDir, entry.branch
+	}
+	repoDir, branch := g.findRepoInfo(ctx, dir)
+	g.mu.Lock()
+	g.repoByDir[dir] = cachedRepo{repoDir: repoDir, branch: branch, found: repoDir != "", fetchedAt: time.Now()}
+	g.mu.Unlock()
+	return repoDir, branch
 }
 
 func (g *GitProvider) findRepoInfo(ctx context.Context, dir string) (string, string) {
@@ -115,18 +147,18 @@ func (g *GitProvider) Actions(ctx context.Context, proc processdomain.Info) []Ac
 	}
 }
 
-func (g *GitProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) error {
+func (g *GitProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) (uint64, error) {
 	if proc.Cwd == "" {
-		return fmt.Errorf("%w: processo sem diretório de trabalho", ErrUnsupported)
+		return 0, fmt.Errorf("%w: processo sem diretório de trabalho", ErrUnsupported)
 	}
 	switch actionID {
 	case "git.status":
 		_, err := g.runner.Run(ctx, "git", "-C", proc.Cwd, "status", "--short")
-		return err
+		return 0, err
 	case "git.fetch":
 		_, err := g.runner.Run(ctx, "git", "-C", proc.Cwd, "fetch", "--dry-run")
-		return err
+		return 0, err
 	default:
-		return fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
+		return 0, fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
 	}
 }

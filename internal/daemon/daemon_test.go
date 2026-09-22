@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -168,6 +169,40 @@ func TestDaemonSustainedDurationRequiresContinuousPressure(t *testing.T) {
 	}
 	if d.pressureStartTime != nil {
 		t.Fatal("pressure start time was not reset after pressure dropped")
+	}
+}
+
+func TestDaemonFailedRemedyMarksFailure(t *testing.T) {
+	svc := &mockService{
+		snapshot: app.Snapshot{
+			Memory: memory.Snapshot{
+				Total:       1000,
+				Used:        950,
+				Reclaimable: 200,
+			},
+		},
+		cleanCacheErr: errors.New("permissão negada"),
+	}
+	cfg := Config{
+		ObserveOnly:       false,
+		MemoryUsagePct:    90.0,
+		SustainedDuration: 0,
+		AllowCacheClean:   true,
+	}
+
+	d := New(svc, cfg)
+	decision, err := d.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick error: %v", err)
+	}
+	if decision.Executed {
+		t.Fatal("failed remedy must not be marked executed")
+	}
+	if !decision.Failed {
+		t.Fatalf("failed remedy not marked: %+v", decision)
+	}
+	if !strings.Contains(decision.Reason, "falhou") {
+		t.Fatalf("reason = %q; want failure explanation", decision.Reason)
 	}
 }
 

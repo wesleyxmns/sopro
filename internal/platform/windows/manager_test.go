@@ -16,10 +16,10 @@ func TestManagerPlatformContract(t *testing.T) {
 
 func TestManagerCapabilities(t *testing.T) {
 	capabilities := New().Capabilities()
-	if capabilities.Platform != "windows" || !capabilities.CanKill {
+	if capabilities.Platform != "windows" || !capabilities.CanKill || !capabilities.CanCleanCache {
 		t.Fatalf("unexpected Windows capabilities: %+v", capabilities)
 	}
-	if capabilities.CanTerminate || capabilities.CanPause || capabilities.CanResume || capabilities.CanCleanCache {
+	if capabilities.CanTerminate || capabilities.CanPause || capabilities.CanResume {
 		t.Fatalf("Windows manager advertised unsupported capabilities: %+v", capabilities)
 	}
 }

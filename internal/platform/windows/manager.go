@@ -121,10 +121,44 @@ func (m *Manager) Kill(ctx context.Context, id processdomain.Identity) error {
 	return osProcess.Kill()
 }
 
-func (m *Manager) Pause(context.Context, processdomain.Identity) error  { return app.ErrUnsupported }
-func (m *Manager) Resume(context.Context, processdomain.Identity) error { return app.ErrUnsupported }
-func (m *Manager) CleanCache(context.Context) (uint64, error)           { return 0, app.ErrUnsupported }
+func (m *Manager) Pause(context.Context, processdomain.Identity) error {
+	return app.ErrUnsupported
+}
+func (m *Manager) Resume(context.Context, processdomain.Identity) error {
+	return app.ErrUnsupported
+}
+
+// CleanCache trims every reachable working set via EmptyWorkingSet, the
+// documented Windows counterpart to dropping caches: trimmed pages move to
+// standby instead of being discarded, so the call is always safe. Processes
+// that refuse the handle (system, protected) are skipped.
+func (m *Manager) CleanCache(ctx context.Context) (uint64, error) {
+	before := availableBytes(ctx)
+	pids, err := gprocess.PidsWithContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, pid := range pids {
+		if ctx.Err() != nil {
+			break
+		}
+		trimWorkingSet(pid)
+	}
+	after := availableBytes(ctx)
+	if after <= before {
+		return 0, nil
+	}
+	return after - before, nil
+}
+
+func availableBytes(ctx context.Context) uint64 {
+	vm, err := mem.VirtualMemoryWithContext(ctx)
+	if err != nil || vm == nil {
+		return 0
+	}
+	return vm.Available
+}
 
 func (m *Manager) Capabilities() app.Capabilities {
-	return app.Capabilities{Platform: "windows", CanKill: true}
+	return app.Capabilities{Platform: "windows", CanKill: true, CanCleanCache: true}
 }

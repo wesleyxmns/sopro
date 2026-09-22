@@ -60,7 +60,43 @@ type Provider interface {
 	Supports(proc processdomain.Info) bool
 	Detect(ctx context.Context, proc processdomain.Info) []ContextInfo
 	Actions(ctx context.Context, proc processdomain.Info) []Action
-	Execute(ctx context.Context, actionID string, proc processdomain.Info) error
+	// Execute runs actionID, returning the reclaimed bytes estimate
+	// (0 when the action frees no measurable memory).
+	Execute(ctx context.Context, actionID string, proc processdomain.Info) (uint64, error)
+}
+
+// CacheTarget describes one safely-cleanable cache unit of a process.
+//
+// Only non-disruptive cleanups qualify: the owning service must keep running
+// normally after the cleanup (e.g. JVM garbage collection, closing blank
+// browser tabs). Destructive or disk-oriented operations such as container
+// removal or image pruning are intentionally not cache targets.
+type CacheTarget struct {
+	// Source names the owning service in UI language (e.g. "JVM").
+	Source string
+	// ActionID is the provider action that performs the cleanup.
+	ActionID string
+	// Label is a short human-readable description of what will be cleaned.
+	Label string
+	// Detail carries disambiguating info (e.g. "PID 1234", "porta 9222").
+	Detail string
+	// Proc is the process the cleanup acts on.
+	Proc processdomain.Info
+}
+
+// CacheScanner is an optional Provider extension reporting the safely-cleanable
+// cache units of a process. Detection must be pure (no I/O) so previews can be
+// rendered synchronously before the user confirms.
+type CacheScanner interface {
+	CacheTargets(proc processdomain.Info) []CacheTarget
+}
+
+// blankTabLister is an optional Provider extension listing closable blank
+// tabs. Unlike CacheTargets it may perform I/O, so callers must run it
+// asynchronously and keep the confirmation usable while it loads.
+type blankTabLister interface {
+	Provider
+	BlankTabs(ctx context.Context, proc processdomain.Info) ([]BlankTab, error)
 }
 
 type EntitySource interface {
@@ -115,6 +151,35 @@ func (r *Registry) Actions(ctx context.Context, proc processdomain.Info) []Actio
 	return actions
 }
 
+func (r *Registry) CacheTargets(proc processdomain.Info) []CacheTarget {
+	if r == nil {
+		return nil
+	}
+	var targets []CacheTarget
+	for _, p := range r.providers {
+		scanner, ok := p.(CacheScanner)
+		if !ok || !p.Supports(proc) {
+			continue
+		}
+		targets = append(targets, scanner.CacheTargets(proc)...)
+	}
+	return targets
+}
+
+func (r *Registry) BlankTabs(ctx context.Context, proc processdomain.Info) ([]BlankTab, error) {
+	if r == nil {
+		return nil, ErrIncompatibleAction
+	}
+	for _, p := range r.providers {
+		lister, ok := p.(blankTabLister)
+		if !ok || !p.Supports(proc) {
+			continue
+		}
+		return lister.BlankTabs(ctx, proc)
+	}
+	return nil, ErrIncompatibleAction
+}
+
 func (r *Registry) SupportsAction(ctx context.Context, actionID string, proc processdomain.Info) bool {
 	for _, p := range r.providers {
 		if p.Supports(proc) {
@@ -128,7 +193,7 @@ func (r *Registry) SupportsAction(ctx context.Context, actionID string, proc pro
 	return false
 }
 
-func (r *Registry) Execute(ctx context.Context, actionID string, proc processdomain.Info) error {
+func (r *Registry) Execute(ctx context.Context, actionID string, proc processdomain.Info) (uint64, error) {
 	for _, p := range r.providers {
 		if p.Supports(proc) {
 			for _, a := range p.Actions(ctx, proc) {
@@ -138,7 +203,7 @@ func (r *Registry) Execute(ctx context.Context, actionID string, proc processdom
 			}
 		}
 	}
-	return ErrIncompatibleAction
+	return 0, ErrIncompatibleAction
 }
 
 func (r *Registry) DiscoverEntities(ctx context.Context) []processdomain.Info {

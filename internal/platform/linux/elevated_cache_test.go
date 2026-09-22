@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,21 @@ func TestElevatedCacheCleanerRequiresPkexec(t *testing.T) {
 
 	if _, err := cleaner.CleanCache(context.Background()); !errors.Is(err, os.ErrPermission) {
 		t.Fatalf("error = %v; want permission error", err)
+	}
+}
+
+func TestElevatedCacheCleanerFailureGuidesToRoot(t *testing.T) {
+	cleaner := NewElevatedCacheCleaner(New())
+	cleaner.euid = func() int { return 1000 }
+	cleaner.executable = func() (string, error) { return "/opt/sopro", nil }
+	cleaner.lookPath = func(string) (string, error) { return "/usr/bin/pkexec", nil }
+	cleaner.run = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("exit status 127")
+	}
+
+	_, err := cleaner.CleanCache(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "execute como root") {
+		t.Fatalf("error = %v; want root guidance for agent-less elevation", err)
 	}
 }
 

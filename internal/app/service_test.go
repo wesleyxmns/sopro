@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wesleyxmns/sopro/internal/audit"
+	"github.com/wesleyxmns/sopro/internal/memory"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
 	"github.com/wesleyxmns/sopro/internal/provider"
 )
@@ -162,10 +163,11 @@ func TestSuccessfulActionReportsAuditFailureSeparately(t *testing.T) {
 }
 
 type stubProvider struct {
-	executed string
+	executed  string
+	reclaimed uint64
 }
 
-func (s *stubProvider) Name() string { return "stub" }
+func (s *stubProvider) Name() string                     { return "stub" }
 func (s *stubProvider) Supports(processdomain.Info) bool { return true }
 func (s *stubProvider) Detect(_ context.Context, _ processdomain.Info) []provider.ContextInfo {
 	return []provider.ContextInfo{{Tag: processdomain.ContextDockerCompose, Label: "compose: demo/app"}}
@@ -173,9 +175,9 @@ func (s *stubProvider) Detect(_ context.Context, _ processdomain.Info) []provide
 func (s *stubProvider) Actions(_ context.Context, _ processdomain.Info) []provider.Action {
 	return []provider.Action{{ID: "stub.restart", Label: "restart"}}
 }
-func (s *stubProvider) Execute(_ context.Context, actionID string, _ processdomain.Info) error {
+func (s *stubProvider) Execute(_ context.Context, actionID string, _ processdomain.Info) (uint64, error) {
 	s.executed = actionID
-	return nil
+	return s.reclaimed, nil
 }
 
 func TestServiceDetectsContextsAndMasksSensitiveArgs(t *testing.T) {
@@ -215,7 +217,7 @@ func TestServiceDetectsContextsAndMasksSensitiveArgs(t *testing.T) {
 		t.Fatalf("actions = %+v", actions)
 	}
 
-	if err := service.ExecuteContextualAction(context.Background(), "stub.restart", proc); err != nil {
+	if _, err := service.ExecuteContextualAction(context.Background(), "stub.restart", proc); err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
 	if p.executed != "stub.restart" {
@@ -223,7 +225,7 @@ func TestServiceDetectsContextsAndMasksSensitiveArgs(t *testing.T) {
 	}
 
 	// Executing incompatible action must be rejected with ErrIncompatibleAction
-	err = service.ExecuteContextualAction(context.Background(), "docker.stop", proc)
+	_, err = service.ExecuteContextualAction(context.Background(), "docker.stop", proc)
 	if !errors.Is(err, provider.ErrIncompatibleAction) {
 		t.Fatalf("expected ErrIncompatibleAction, got %v", err)
 	}
@@ -231,7 +233,7 @@ func TestServiceDetectsContextsAndMasksSensitiveArgs(t *testing.T) {
 
 type containerStubProvider struct{}
 
-func (c *containerStubProvider) Name() string { return "docker-stub" }
+func (c *containerStubProvider) Name() string                     { return "docker-stub" }
 func (c *containerStubProvider) Supports(processdomain.Info) bool { return true }
 func (c *containerStubProvider) Detect(_ context.Context, proc processdomain.Info) []provider.ContextInfo {
 	if proc.PID == 200 {
@@ -254,8 +256,40 @@ func (c *containerStubProvider) Detect(_ context.Context, proc processdomain.Inf
 func (c *containerStubProvider) Actions(_ context.Context, _ processdomain.Info) []provider.Action {
 	return nil
 }
-func (c *containerStubProvider) Execute(_ context.Context, _ string, _ processdomain.Info) error {
-	return nil
+func (c *containerStubProvider) Execute(_ context.Context, _ string, _ processdomain.Info) (uint64, error) {
+	return 0, nil
+}
+
+func TestExecuteContextualActionReportsReclaimedBytes(t *testing.T) {
+	stub := &stubProvider{reclaimed: 2048}
+	recorder := &auditRecorderStub{}
+	service := NewService(
+		Dependencies{Audit: recorder},
+		WithProviderRegistry(provider.NewRegistry(stub)),
+	)
+	proc := processdomain.Info{Identity: processdomain.Identity{PID: 7}}
+
+	reclaimed, err := service.ExecuteContextualAction(context.Background(), "stub.restart", proc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reclaimed != 2048 {
+		t.Fatalf("reclaimed = %d; want 2048", reclaimed)
+	}
+	if len(recorder.events) != 1 || recorder.events[0].ReclaimedBytes != 2048 {
+		t.Fatalf("audit events = %+v; want reclaimed bytes recorded", recorder.events)
+	}
+}
+
+func TestPreviewBlankTabsRejectsMissingProviders(t *testing.T) {
+	var nilService *Service
+	if _, err := nilService.PreviewBlankTabs(context.Background(), processdomain.Info{}); err != ErrUnsupported {
+		t.Fatalf("err = %v; want ErrUnsupported", err)
+	}
+	service := NewService(Dependencies{})
+	if _, err := service.PreviewBlankTabs(context.Background(), processdomain.Info{}); err != ErrUnsupported {
+		t.Fatalf("err = %v; want ErrUnsupported", err)
+	}
 }
 
 func TestServiceEnrichesContainerEntitiesInSnapshot(t *testing.T) {
@@ -348,5 +382,198 @@ func TestServiceInjectsStoppedContainersInSnapshot(t *testing.T) {
 	}
 }
 
+type capabilityStub struct {
+	canCleanCache bool
+}
 
+func (stub capabilityStub) Capabilities() Capabilities {
+	return Capabilities{Platform: "test", CanCleanCache: stub.canCleanCache}
+}
 
+type cacheCleanerStub struct {
+	reclaimed uint64
+	err       error
+	calls     int
+}
+
+func (stub *cacheCleanerStub) CleanCache(context.Context) (uint64, error) {
+	stub.calls++
+	return stub.reclaimed, stub.err
+}
+
+type cacheStubProvider struct {
+	stubProvider
+	fail map[string]error
+}
+
+func (c *cacheStubProvider) CacheTargets(proc processdomain.Info) []provider.CacheTarget {
+	return []provider.CacheTarget{{
+		Source: "Stub", ActionID: "stub.restart",
+		Label: "stub cache", Detail: "shared",
+		Proc: proc,
+	}}
+}
+
+func (c *cacheStubProvider) Execute(_ context.Context, actionID string, _ processdomain.Info) (uint64, error) {
+	c.executed = actionID
+	if err, ok := c.fail[actionID]; ok {
+		return 0, err
+	}
+	return 0, nil
+}
+
+func cleanAllSnapshot() Snapshot {
+	return Snapshot{
+		Memory: memory.Snapshot{Reclaimable: 4 * 1024 * 1024 * 1024},
+		Processes: []processdomain.Info{
+			{
+				Identity:    processdomain.Identity{PID: 101},
+				Command:     "chrome",
+				CommandLine: "chrome --remote-debugging-port=9222",
+				Category:    processdomain.CategoryBrowser,
+			},
+			{
+				Identity:    processdomain.Identity{PID: 102},
+				Command:     "chrome",
+				CommandLine: "chrome --remote-debugging-port=9222 --type=renderer",
+				Category:    processdomain.CategoryBrowser,
+			},
+			{
+				Identity: processdomain.Identity{PID: 202},
+				Command:  "java",
+				Category: processdomain.CategoryJVM,
+			},
+			{
+				Identity: processdomain.Identity{PID: 303},
+				Command:  "bash",
+				Category: processdomain.CategorySystem,
+			},
+		},
+	}
+}
+
+func TestPreviewCleanAllListsOSFirstAndDedupesSharedTargets(t *testing.T) {
+	service := NewService(
+		Dependencies{Capabilities: capabilityStub{canCleanCache: true}},
+		WithProviderRegistry(provider.NewRegistry(provider.NewJVMProvider(), provider.NewCDPProvider())),
+	)
+
+	targets := service.PreviewCleanAll(cleanAllSnapshot())
+	if len(targets) != 3 {
+		t.Fatalf("targets = %+v; want 3 (OS + browser + JVM)", targets)
+	}
+	if targets[0].ActionID != "clean-cache" || targets[0].Source != "SO" {
+		t.Fatalf("first target = %+v; want the OS page cache", targets[0])
+	}
+	if targets[0].Detail != "≈ 4.00 GB" {
+		t.Fatalf("first target detail = %q; want the reclaimable bytes", targets[0].Detail)
+	}
+	if targets[1].ActionID != "cdp.close_blank" {
+		t.Fatalf("second target = %+v; want the deduplicated browser target", targets[1])
+	}
+	if targets[2].ActionID != "jvm.run_gc" || targets[2].Proc.PID != 202 {
+		t.Fatalf("third target = %+v; want the JVM target for PID 202", targets[2])
+	}
+}
+
+func TestPreviewCleanAllSkipsOSWithoutPrivilegeOrReclaimable(t *testing.T) {
+	registry := provider.NewRegistry(provider.NewJVMProvider())
+
+	unprivileged := NewService(
+		Dependencies{Capabilities: capabilityStub{canCleanCache: false}},
+		WithProviderRegistry(registry),
+	)
+	if targets := unprivileged.PreviewCleanAll(cleanAllSnapshot()); len(targets) != 1 || targets[0].ActionID != "jvm.run_gc" {
+		t.Fatalf("unprivileged targets = %+v; want only the JVM target", targets)
+	}
+
+	privileged := NewService(
+		Dependencies{Capabilities: capabilityStub{canCleanCache: true}},
+		WithProviderRegistry(provider.NewRegistry()),
+	)
+	empty := cleanAllSnapshot()
+	empty.Memory.Reclaimable = 0
+	empty.Processes = empty.Processes[3:]
+	if targets := privileged.PreviewCleanAll(empty); len(targets) != 0 {
+		t.Fatalf("targets = %+v; want none without reclaimable bytes or providers", targets)
+	}
+}
+
+func TestCleanTargetsRoutesOSAndProviders(t *testing.T) {
+	cache := &cacheCleanerStub{reclaimed: 4096}
+	stub := &cacheStubProvider{}
+	recorder := &auditRecorderStub{}
+	service := NewService(
+		Dependencies{Cache: cache, Capabilities: capabilityStub{canCleanCache: true}, Audit: recorder},
+		WithProviderRegistry(provider.NewRegistry(stub)),
+	)
+	proc := processdomain.Info{Identity: processdomain.Identity{PID: 9}}
+
+	result, err := service.CleanTargets(context.Background(), []provider.CacheTarget{
+		{Source: "Sistema operacional", ActionID: "clean-cache", Label: "page cache"},
+		{Source: "Stub", ActionID: "stub.restart", Label: "stub cache", Proc: proc},
+	})
+	if err != nil {
+		t.Fatalf("clean failed: %v", err)
+	}
+	if result.ReclaimedBytes != 4096 || result.Succeeded != 2 || result.Failed != 0 {
+		t.Fatalf("result = %+v; want 4096 bytes and 2 successes", result)
+	}
+	if cache.calls != 1 || stub.executed != "stub.restart" {
+		t.Fatalf("cache calls = %d, executed = %q", cache.calls, stub.executed)
+	}
+	if len(recorder.events) != 1 {
+		t.Fatalf("audit events = %d; want 1", len(recorder.events))
+	}
+	event := recorder.events[0]
+	if event.Action != "clean-cache-all" || !event.Success || event.ReclaimedBytes != 4096 {
+		t.Fatalf("unexpected audit event: %+v", event)
+	}
+}
+
+func TestCleanTargetsReportsPartialAndTotalFailures(t *testing.T) {
+	newService := func(cacheErr, providerErr error) (*Service, *auditRecorderStub) {
+		recorder := &auditRecorderStub{}
+		service := NewService(
+			Dependencies{
+				Cache:        &cacheCleanerStub{reclaimed: 128, err: cacheErr},
+				Capabilities: capabilityStub{canCleanCache: true},
+				Audit:        recorder,
+			},
+			WithProviderRegistry(provider.NewRegistry(&cacheStubProvider{fail: map[string]error{"stub.restart": providerErr}})),
+		)
+		return service, recorder
+	}
+	targets := []provider.CacheTarget{
+		{Source: "Sistema operacional", ActionID: "clean-cache", Label: "page cache"},
+		{Source: "Stub", ActionID: "stub.restart", Label: "stub cache", Proc: processdomain.Info{Identity: processdomain.Identity{PID: 9}}},
+	}
+
+	partial, partialRecorder := newService(nil, errors.New("boom"))
+	result, err := partial.CleanTargets(context.Background(), targets)
+	if err != nil {
+		t.Fatalf("partial cleanup must not fail, got %v", err)
+	}
+	if result.Succeeded != 1 || result.Failed != 1 || result.ReclaimedBytes != 128 {
+		t.Fatalf("partial result = %+v", result)
+	}
+	if len(partialRecorder.events) != 1 || !partialRecorder.events[0].Success {
+		t.Fatalf("partial audit events = %+v; want one success", partialRecorder.events)
+	}
+
+	total, totalRecorder := newService(errors.New("denied"), errors.New("boom"))
+	result, err = total.CleanTargets(context.Background(), targets)
+	if err == nil {
+		t.Fatal("total failure must return an error")
+	}
+	if result.Succeeded != 0 || result.Failed != 2 {
+		t.Fatalf("total result = %+v", result)
+	}
+	if len(totalRecorder.events) != 1 || totalRecorder.events[0].Success {
+		t.Fatalf("total audit events = %+v; want one failure", totalRecorder.events)
+	}
+
+	if _, err := total.CleanTargets(context.Background(), nil); err == nil {
+		t.Fatal("empty targets must return an error")
+	}
+}

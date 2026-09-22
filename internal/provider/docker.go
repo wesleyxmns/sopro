@@ -105,9 +105,9 @@ func (d *DockerProvider) refreshCache(ctx context.Context) {
 	}
 
 	type inspectDetail struct {
-		ID     string `json:"Id"`
-		Name   string `json:"Name"`
-		State  struct {
+		ID    string `json:"Id"`
+		Name  string `json:"Name"`
+		State struct {
 			Pid     int    `json:"Pid"`
 			Status  string `json:"Status"`
 			Running bool   `json:"Running"`
@@ -413,27 +413,27 @@ func (d *DockerProvider) Actions(ctx context.Context, proc processdomain.Info) [
 	}
 }
 
-func (d *DockerProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) error {
+func (d *DockerProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) (uint64, error) {
 	target := d.resolveTarget(proc)
 	if target == "" {
-		return fmt.Errorf("%w: nenhum container identificado no processo", ErrUnsupported)
+		return 0, fmt.Errorf("%w: nenhum container identificado no processo", ErrUnsupported)
 	}
 
 	switch actionID {
 	case "docker.start":
 		_, err := d.runner.Run(ctx, "docker", "start", target)
-		return err
+		return 0, err
 	case "docker.stop":
 		_, err := d.runner.Run(ctx, "docker", "stop", target)
-		return err
+		return 0, err
 	case "docker.restart":
 		_, err := d.runner.Run(ctx, "docker", "restart", target)
-		return err
+		return 0, err
 	case "docker.pause":
 		_, err := d.runner.Run(ctx, "docker", "pause", target)
-		return err
+		return 0, err
 	default:
-		return fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
+		return 0, fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
 	}
 }
 

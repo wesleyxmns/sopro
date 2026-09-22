@@ -49,6 +49,35 @@ func TestGitProviderDetectWithBranch(t *testing.T) {
 	}
 }
 
+func TestGitProviderDetectCachesPerDirectory(t *testing.T) {
+	runner := newMockCommandRunner()
+	dir := "/home/user/projects/sopro"
+	runner.responses["git -C /home/user/projects/sopro rev-parse --show-toplevel"] = []byte("/home/user/projects/sopro\n")
+	runner.responses["git -C /home/user/projects/sopro branch --show-current"] = []byte("main\n")
+
+	p := NewGitProvider(runner)
+	proc := processdomain.Info{Category: processdomain.CategoryDevelopment, Cwd: dir}
+
+	first := p.Detect(context.Background(), proc)
+	second := p.Detect(context.Background(), proc)
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf("expected 1 context per detect, got %d/%d", len(first), len(second))
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d; want 2 (rev-parse + branch once)", len(runner.calls))
+	}
+
+	other := processdomain.Info{Category: processdomain.CategoryDevelopment, Cwd: "/home/user/projects/other"}
+	runner.responses["git -C /home/user/projects/other rev-parse --show-toplevel"] = []byte("/home/user/projects/other\n")
+	runner.responses["git -C /home/user/projects/other branch --show-current"] = []byte("dev\n")
+	if contexts := p.Detect(context.Background(), other); len(contexts) != 1 {
+		t.Fatalf("expected 1 context for the second directory, got %d", len(contexts))
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("runner calls = %d; want 4 (one lookup per directory)", len(runner.calls))
+	}
+}
+
 func TestGitProviderActionsAndExecute(t *testing.T) {
 	runner := newMockCommandRunner()
 	dir := "/home/user/sopro"
@@ -66,13 +95,13 @@ func TestGitProviderActionsAndExecute(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := p.Execute(ctx, "git.status", proc); err != nil {
+	if _, err := p.Execute(ctx, "git.status", proc); err != nil {
 		t.Fatalf("git.status failed: %v", err)
 	}
-	if err := p.Execute(ctx, "git.fetch", proc); err != nil {
+	if _, err := p.Execute(ctx, "git.fetch", proc); err != nil {
 		t.Fatalf("git.fetch failed: %v", err)
 	}
-	if err := p.Execute(ctx, "git.nonexistent", proc); err == nil {
+	if _, err := p.Execute(ctx, "git.nonexistent", proc); err == nil {
 		t.Fatal("expected error on nonexistent action")
 	}
 }

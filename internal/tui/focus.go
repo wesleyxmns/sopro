@@ -7,6 +7,7 @@ import (
 	"github.com/wesleyxmns/sopro/internal/control"
 	"github.com/wesleyxmns/sopro/internal/memory"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/provider"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -42,6 +43,12 @@ func (m Model) renderConfirmationFocus(background string) string {
 			"Cache de páginas, dentries e inodes",
 			m.theme.Warning.Render("Pode aumentar I/O e uso de CPU temporariamente."),
 		)
+	} else if request.Action == control.ActionCleanAll {
+		lines = append(lines, "", m.theme.Muted.Render("Será limpo"))
+		lines = append(lines, m.renderCleanAllTargetLines(request.Targets, innerWidth)...)
+		if cleanAllIncludesOS(request.Targets) {
+			lines = append(lines, m.theme.Warning.Render("A limpeza do SO pode aumentar I/O temporariamente."))
+		}
 	} else if target, ok := m.processByIdentity(request.Process); ok {
 		lines = append(lines,
 			"",
@@ -51,6 +58,10 @@ func (m Model) renderConfirmationFocus(background string) string {
 			fmt.Sprintf("memória %-10s  CPU %.1f%%", memory.FormatBytes(target.MemoryBytes), target.CPUPct),
 			fmt.Sprintf("estado %-12s risco %s", stateLabel(target), riskLabel(target.Risk)),
 		)
+		if request.Action == control.ActionCDPCloseBlank && len(m.PendingTabs) > 0 {
+			lines = append(lines, "", m.theme.Muted.Render(fmt.Sprintf("Serão fechadas (%d)", len(m.PendingTabs))))
+			lines = append(lines, m.renderBlankTabLines(m.PendingTabs, innerWidth)...)
+		}
 	}
 
 	if request.Action == control.ActionKill {
@@ -144,6 +155,41 @@ func (m Model) renderExecutionFocus(background string) string {
 	return overlayCentered(background, panel, m.Width, m.Height)
 }
 
+func (m Model) renderCleanAllTargetLines(targets []provider.CacheTarget, width int) []string {
+	const maxListedTargets = 6
+	shown := targets
+	lines := make([]string, 0, len(shown)+1)
+	for _, target := range shown[:min(len(shown), maxListedTargets)] {
+		line := fmt.Sprintf("• %s: %s · %s", target.Source, target.Label, target.Detail)
+		lines = append(lines, ansi.Truncate(line, width, "…"))
+	}
+	if len(targets) > maxListedTargets {
+		lines = append(lines, m.theme.Muted.Render(fmt.Sprintf("+%d outro(s)", len(targets)-maxListedTargets)))
+	}
+	return lines
+}
+
+func (m Model) renderBlankTabLines(tabs []provider.BlankTab, width int) []string {
+	const maxListedTabs = 3
+	lines := make([]string, 0, len(tabs)+1)
+	for _, tab := range tabs[:min(len(tabs), maxListedTabs)] {
+		lines = append(lines, ansi.Truncate("• "+tab.DisplayName(), width, "…"))
+	}
+	if len(tabs) > maxListedTabs {
+		lines = append(lines, m.theme.Muted.Render(fmt.Sprintf("+%d outras", len(tabs)-maxListedTabs)))
+	}
+	return lines
+}
+
+func cleanAllIncludesOS(targets []provider.CacheTarget) bool {
+	for _, target := range targets {
+		if target.ActionID == string(control.ActionClean) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m Model) processByIdentity(identity processdomain.Identity) (processdomain.Info, bool) {
 	for _, candidate := range m.Snapshot.Processes {
 		if candidate.Identity == identity {
@@ -165,6 +211,24 @@ func actionCopy(action control.Action) (string, string) {
 		return "RETOMAR PROCESSO", "Permite que o processo pausado continue a execução."
 	case control.ActionClean:
 		return "LIMPAR CACHE DO SISTEMA", "Solicita ao kernel a liberação manual de caches recuperáveis."
+	case control.ActionCleanAll:
+		return "LIMPEZA TOTAL DE CACHE", "Limpa de uma vez todos os caches recuperáveis listados abaixo."
+	case control.ActionDockerStop:
+		return "PARAR CONTAINER", "Solicita que o container Docker pare de forma organizada."
+	case control.ActionDockerStart:
+		return "INICIAR CONTAINER", "Solicita que o container Docker parado volte a executar."
+	case control.ActionDockerRestart:
+		return "REINICIAR CONTAINER", "Reinicia o container Docker."
+	case control.ActionDockerPause:
+		return "PAUSAR CONTAINER", "Suspende os processos do container Docker."
+	case control.ActionCDPCloseBlank:
+		return "FECHAR ABAS EM BRANCO", "Fecha páginas vazias do navegador via depuração remota (CDP)."
+	case control.ActionJVMRunGC:
+		return "FORÇAR GC NA JVM", "Solicita coleta de lixo no heap da JVM (jcmd GC.run)."
+	case control.ActionGitStatus:
+		return "GIT STATUS", "Lista arquivos modificados no repositório (somente leitura)."
+	case control.ActionGitFetch:
+		return "GIT FETCH", "Consulta o remoto sem alterar o trabalho local (dry-run)."
 	default:
 		return "", ""
 	}

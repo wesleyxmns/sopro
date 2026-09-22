@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+
+	gprocess "github.com/shirou/gopsutil/v3/process"
 )
 
 var (
@@ -63,6 +65,25 @@ func (j *JVMProvider) Detect(ctx context.Context, proc processdomain.Info) []Con
 	}
 }
 
+func (j *JVMProvider) CacheTargets(proc processdomain.Info) []CacheTarget {
+	if proc.PID <= 0 {
+		return nil
+	}
+	command := proc.Command
+	if command == "" {
+		command = "java"
+	}
+	return []CacheTarget{
+		{
+			Source:   "JVM",
+			ActionID: "jvm.run_gc",
+			Label:    "Coleta de lixo (GC) no heap",
+			Detail:   fmt.Sprintf("PID %d · %s", proc.PID, command),
+			Proc:     proc,
+		},
+	}
+}
+
 func (j *JVMProvider) Actions(ctx context.Context, proc processdomain.Info) []Action {
 	if proc.PID <= 0 {
 		return nil
@@ -78,16 +99,40 @@ func (j *JVMProvider) Actions(ctx context.Context, proc processdomain.Info) []Ac
 	}
 }
 
-func (j *JVMProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) error {
+func (j *JVMProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) (uint64, error) {
 	if proc.PID <= 0 {
-		return fmt.Errorf("%w: PID inválido para jcmd", ErrUnsupported)
+		return 0, fmt.Errorf("%w: PID inválido para jcmd", ErrUnsupported)
 	}
 
 	switch actionID {
 	case "jvm.run_gc":
-		_, err := j.runner.Run(ctx, "jcmd", strconv.Itoa(int(proc.PID)), "GC.run")
-		return err
+		before := residentBytes(proc.PID)
+		if _, err := j.runner.Run(ctx, "jcmd", strconv.Itoa(int(proc.PID)), "GC.run"); err != nil {
+			return 0, err
+		}
+		return reclaimedBytes(before, residentBytes(proc.PID)), nil
 	default:
-		return fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
+		return 0, fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
 	}
+}
+
+func residentBytes(pid int32) uint64 {
+	proc, err := gprocess.NewProcess(pid)
+	if err != nil {
+		return 0
+	}
+	info, err := proc.MemoryInfo()
+	if err != nil || info == nil {
+		return 0
+	}
+	return info.RSS
+}
+
+// reclaimedBytes reports the resident drop across a cleanup. A zero reading
+// means the process vanished or is unreadable, never reclaimed memory.
+func reclaimedBytes(before, after uint64) uint64 {
+	if after == 0 || after >= before {
+		return 0
+	}
+	return before - after
 }

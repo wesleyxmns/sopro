@@ -39,8 +39,10 @@ type LeakGuard struct {
 
 func DefaultLeakGuardConfig() LeakGuardConfig {
 	return LeakGuardConfig{
-		Window:                  5 * time.Minute,
-		MinSamples:              8,
+		Window: 5 * time.Minute,
+		// ~60s of TUI ticks: a shorter window flags normal GC garbage
+		// accumulation between collections as a suspected leak.
+		MinSamples:              30,
 		MinGrowthBytesPerSecond: 1024 * 1024 / 60,
 		MinConfidence:           .8,
 	}

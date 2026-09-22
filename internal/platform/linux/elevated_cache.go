@@ -61,7 +61,7 @@ func (c *ElevatedCacheCleaner) CleanCache(ctx context.Context) (uint64, error) {
 
 	pkexec, err := c.lookPath("pkexec")
 	if err != nil {
-		return 0, fmt.Errorf("%w: pkexec não está disponível", os.ErrPermission)
+		return 0, fmt.Errorf("%w: pkexec não está disponível — execute como root para limpar o cache do SO", os.ErrPermission)
 	}
 	executable, err := c.executable()
 	if err != nil {
@@ -69,7 +69,7 @@ func (c *ElevatedCacheCleaner) CleanCache(ctx context.Context) (uint64, error) {
 	}
 	output, err := c.run(ctx, pkexec, executable, PrivilegedCleanCacheCommand)
 	if err != nil {
-		return 0, fmt.Errorf("elevar limpeza de cache: %w", err)
+		return 0, fmt.Errorf("elevar limpeza de cache: %w (sem agente de autenticação? execute como root)", err)
 	}
 	reclaimed, err := strconv.ParseUint(strings.TrimSpace(string(output)), 10, 64)
 	if err != nil {

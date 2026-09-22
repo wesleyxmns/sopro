@@ -16,6 +16,8 @@ import (
 const (
 	refreshInterval  = 2 * time.Second
 	operationTimeout = 4 * time.Second
+	cleanAllTimeout  = 30 * time.Second
+	restartDelay     = 1200 * time.Millisecond
 	processLimit     = 200
 	splashDuration   = 900 * time.Millisecond
 )
@@ -37,9 +39,22 @@ func loadSnapshotCmd(service *app.Service) tea.Cmd {
 	}
 }
 
-func executeActionCmd(service *app.Service, request control.Request) tea.Cmd {
+func fetchBlankTabsCmd(service *app.Service, proc processdomain.Info) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
+		defer cancel()
+		tabs, err := service.PreviewBlankTabs(ctx, proc)
+		return blankTabsLoadedMsg{proc: proc.Identity, tabs: tabs, err: err}
+	}
+}
+
+func executeActionCmd(service *app.Service, request control.Request) tea.Cmd {
+	timeout := operationTimeout
+	if request.Action == control.ActionCleanAll {
+		timeout = cleanAllTimeout
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		result := control.Result{Action: request.Action, Process: request.Process}
@@ -55,13 +70,22 @@ func executeActionCmd(service *app.Service, request control.Request) tea.Cmd {
 			err = service.Resume(ctx, request.Process)
 		case control.ActionClean:
 			result.Reclaimed, err = service.CleanCache(ctx)
+		case control.ActionCleanAll:
+			var cleaned app.CleanAllResult
+			cleaned, err = service.CleanTargets(ctx, request.Targets)
+			result.Reclaimed = cleaned.ReclaimedBytes
+			result.Succeeded = cleaned.Succeeded
+			result.Failed = cleaned.Failed
 		default:
-			proc := processdomain.Info{
-				Identity:      request.Process,
-				ContainerName: request.ContainerName,
-				ContainerID:   request.ContainerID,
+			proc := request.Target
+			proc.Identity = request.Process
+			if request.ContainerName != "" {
+				proc.ContainerName = request.ContainerName
 			}
-			err = service.ExecuteContextualAction(ctx, string(request.Action), proc)
+			if request.ContainerID != "" {
+				proc.ContainerID = request.ContainerID
+			}
+			result.Reclaimed, err = service.ExecuteContextualAction(ctx, string(request.Action), proc)
 		}
 		result.Finished = time.Now()
 		return actionFinishedMsg{result: result, err: err}
