@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wesleyxmns/sopro/internal/app"
+	"github.com/wesleyxmns/sopro/internal/memory"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
 	"github.com/wesleyxmns/sopro/internal/updater"
 
@@ -364,6 +366,63 @@ func TestMemorySummaryPlacesSecondaryMetricsInRightGrid(t *testing.T) {
 		}
 	}
 	t.Fatal("secondary memory metrics were not arranged as an ordered right-side grid")
+}
+
+func TestSuspectedLeakIsBadgedInProcessList(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, backend := newTestModel()
+	model.theme = NewTheme()
+	model.Width = 120
+	model.Height = 30
+	model.ShowSplash = false
+	snapshot := backend.snapshot
+	snapshot.Processes[0].Leak = processdomain.LeakAssessment{Status: processdomain.LeakSuspected}
+	model.applySnapshot(snapshot)
+
+	view := model.View()
+	if !strings.Contains(view, "[vazamento?]") {
+		t.Fatal("process list omitted the suspected-leak badge")
+	}
+	if occurrences := strings.Count(view, "[vazamento?]"); occurrences != 1 {
+		t.Fatalf("badge occurrences = %d; want 1 (only the suspected process)", occurrences)
+	}
+}
+
+func TestReclaimableMetricHintsCleanAllKey(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, backend := newTestModel()
+	model.theme = NewTheme()
+	model.Width = 120
+	model.Height = 30
+	model.ShowSplash = false
+	model.applySnapshot(backend.snapshot)
+
+	if view := model.View(); !strings.Contains(view, "RECUPERÁVEL [T]") {
+		t.Fatal("reclaimable metric did not hint the clean-all key")
+	}
+}
+
+func TestMemoryTrendExplainsSparkline(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	model, _ := newTestModel()
+	model.theme = NewTheme()
+	model.Width = 120
+	model.Height = 30
+	model.ShowSplash = false
+
+	if view := model.View(); !strings.Contains(view, "aguardando amostras") {
+		t.Fatal("empty history did not explain the missing sparkline")
+	}
+
+	for _, used := range []uint64{80, 82, 86} {
+		model.applySnapshot(app.Snapshot{Memory: memory.Snapshot{Total: 100, Used: used}})
+	}
+	view := model.View()
+	for _, expected := range []string{"HISTÓRICO", "80–86%", "6s", "▇"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("memory trend omitted %q", expected)
+		}
+	}
 }
 
 func TestCompactMemorySummaryRemainsCondensed(t *testing.T) {

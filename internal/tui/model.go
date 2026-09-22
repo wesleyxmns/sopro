@@ -3,14 +3,17 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/wesleyxmns/sopro/internal/app"
 	"github.com/wesleyxmns/sopro/internal/control"
 	"github.com/wesleyxmns/sopro/internal/memory"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/provider"
 	"github.com/wesleyxmns/sopro/internal/updater"
 	"github.com/wesleyxmns/sopro/internal/version"
 
@@ -32,9 +35,11 @@ type Model struct {
 	Acting               bool
 	ShowSplash           bool
 	Pending              *control.Request
+	PendingTabs          []provider.BlankTab
 	ActiveAction         *control.Request
 	UpdateAvailable      *updater.ReleaseInfo
 	PendingUpdate        *updater.ReleaseInfo
+	RestartRequested     bool
 	CheckingUpdate       bool
 	UpdateCheckFailed    bool
 	UpdateNeedsElevation bool
@@ -140,8 +145,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.result.Action == control.ActionClean {
 			m.Message = "Cache limpo: " + memory.FormatBytes(msg.result.Reclaimed)
+		} else if msg.result.Action == control.ActionCleanAll {
+			m.Message = fmt.Sprintf(
+				"Limpeza total concluída: %s recuperados (%d ok, %d falha(s))",
+				memory.FormatBytes(msg.result.Reclaimed), msg.result.Succeeded, msg.result.Failed,
+			)
 		} else {
 			m.Message = fmt.Sprintf("Ação %s concluída no PID %d", msg.result.Action, msg.result.Process.PID)
+			if msg.result.Reclaimed > 0 {
+				m.Message += fmt.Sprintf(" · %s recuperados", memory.FormatBytes(msg.result.Reclaimed))
+			}
 		}
 		m.Loading = true
 		return m, loadSnapshotCmd(m.service)
@@ -180,7 +193,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.ActiveAction = nil
 		if msg.err != nil {
 			if errors.Is(msg.err, updater.ErrPermissionDenied) {
-				m.Message = "Atualização requer permissão administrativa: execute sudo sopro update"
+				m.Message = "Atualização requer permissão administrativa: " + elevationHint(runtime.GOOS)
 			} else {
 				m.Message = "Falha na atualização: " + msg.err.Error()
 			}
@@ -189,12 +202,28 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.UpdateAvailable = nil
 		m.PendingUpdate = nil
 		m.UpdateNeedsElevation = false
-		m.Message = fmt.Sprintf("✔ Sopro atualizado para %s! Reinicie para carregar.", msg.release.TagName)
+		m.Message = fmt.Sprintf("✔ Sopro atualizado para %s! Reiniciando…", msg.release.TagName)
+		m.RestartRequested = true
 		m.syncViewport()
+		return m, tea.Tick(restartDelay, func(time.Time) tea.Msg { return restartMsg{} })
+	case restartMsg:
+		return m, tea.Quit
+	case blankTabsLoadedMsg:
+		if m.Pending != nil && m.Pending.Action == control.ActionCDPCloseBlank && m.Pending.Process == msg.proc && msg.err == nil {
+			m.PendingTabs = msg.tabs
+			m.syncViewport()
+		}
 		return m, nil
 	}
 
 	return m, nil
+}
+
+func elevationHint(goos string) string {
+	if goos == "windows" {
+		return "execute o Sopro como Administrador"
+	}
+	return "execute sudo sopro update"
 }
 
 func isUpdaterMessage(message string) bool {
@@ -221,6 +250,9 @@ func isUpdaterMessage(message string) bool {
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.RestartRequested {
+		return m, nil
+	}
 	if m.ShowSplash {
 		if key == "q" || key == "ctrl+c" {
 			return m, tea.Quit
@@ -233,12 +265,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter", "y":
 			request := *m.Pending
 			m.Pending = nil
+			m.PendingTabs = nil
 			m.Acting = true
 			m.ActiveAction = &request
 			m.Message = "Executando " + string(request.Action) + "…"
 			return m, executeActionCmd(m.service, request)
 		case "esc", "n":
 			m.Pending = nil
+			m.PendingTabs = nil
 			m.Message = "Ação cancelada"
 		}
 		return m, nil
@@ -288,12 +322,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.prepareProcessAction(action)
 		}
 	case "c":
-		if !m.Capabilities.CanCleanCache {
-			m.Message = "Limpeza de cache indisponível sem privilégios"
+		selected, ok := m.selectedProcess()
+		if !ok {
 			break
 		}
-		m.Pending = &control.Request{Action: control.ActionClean}
-		m.Message = "Confirmar limpeza manual do cache?"
+		targets := m.service.CacheTargets(selected)
+		if len(targets) == 0 {
+			m.Message = fmt.Sprintf("Nenhum cache limpável para '%s' (PID %d)", selected.Command, selected.PID)
+			if selected.Category == processdomain.CategoryBrowser {
+				m.Message += " · navegador exige --remote-debugging-port"
+			}
+			break
+		}
+		target := targets[0]
+		m.Pending = &control.Request{Action: control.Action(target.ActionID), Process: selected.Identity, Target: selected}
+		m.Message = fmt.Sprintf("Confirmar %s (%s)?", target.Label, target.Detail)
+	case "t", "T":
+		targets := m.service.PreviewCleanAll(m.Snapshot)
+		if len(targets) == 0 {
+			m.Message = "Nenhum cache limpável no momento"
+			break
+		}
+		m.Pending = &control.Request{Action: control.ActionCleanAll, Targets: targets}
+		m.Message = fmt.Sprintf("Confirmar limpeza total de %d alvo(s)?", len(targets))
 	case "d":
 		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryContainer || selected.ContainerID != "") {
 			name := selected.ContainerName
@@ -306,6 +357,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					Process:       selected.Identity,
 					ContainerName: selected.ContainerName,
 					ContainerID:   selected.ContainerID,
+					Target:        selected,
 				}
 				m.Message = fmt.Sprintf("Confirmar início do container '%s'?", name)
 			} else {
@@ -314,6 +366,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					Process:       selected.Identity,
 					ContainerName: selected.ContainerName,
 					ContainerID:   selected.ContainerID,
+					Target:        selected,
 				}
 				m.Message = fmt.Sprintf("Confirmar parada do container '%s'?", name)
 			}
@@ -329,6 +382,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Process:       selected.Identity,
 				ContainerName: selected.ContainerName,
 				ContainerID:   selected.ContainerID,
+				Target:        selected,
 			}
 			m.Message = fmt.Sprintf("Confirmar reinício do container '%s'?", name)
 		}
@@ -343,23 +397,31 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Process:       selected.Identity,
 				ContainerName: selected.ContainerName,
 				ContainerID:   selected.ContainerID,
+				Target:        selected,
 			}
 			m.Message = fmt.Sprintf("Confirmar pausa do container '%s'?", name)
 		}
 	case "b":
 		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryBrowser || hasContextTag(selected.Contexts, processdomain.ContextBrowserDebug)) {
-			m.Pending = &control.Request{Action: control.ActionCDPCloseBlank, Process: selected.Identity}
+			m.Pending = &control.Request{Action: control.ActionCDPCloseBlank, Process: selected.Identity, Target: selected}
+			m.PendingTabs = nil
 			m.Message = fmt.Sprintf("Confirmar fechamento de abas vazias via CDP (PID %d)?", selected.PID)
-		}
-	case "a":
-		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryBrowser || hasContextTag(selected.Contexts, processdomain.ContextBrowserDebug)) {
-			m.Pending = &control.Request{Action: control.ActionCDPDiscardInactive, Process: selected.Identity}
-			m.Message = fmt.Sprintf("Confirmar suspensão de abas inativas via CDP (PID %d)?", selected.PID)
+			return m, fetchBlankTabsCmd(m.service, selected)
 		}
 	case "j":
 		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryJVM || hasContextTag(selected.Contexts, processdomain.ContextTag("jvm-runtime"))) {
-			m.Pending = &control.Request{Action: control.ActionJVMRunGC, Process: selected.Identity}
+			m.Pending = &control.Request{Action: control.ActionJVMRunGC, Process: selected.Identity, Target: selected}
 			m.Message = fmt.Sprintf("Confirmar Garbage Collection na JVM (PID %d)?", selected.PID)
+		}
+	case "w":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryDevelopment || hasContextTag(selected.Contexts, processdomain.ContextGitRepository)) {
+			m.Pending = &control.Request{Action: control.ActionGitStatus, Process: selected.Identity, Target: selected}
+			m.Message = fmt.Sprintf("Confirmar git status em '%s' (PID %d)?", selected.Command, selected.PID)
+		}
+	case "v":
+		if selected, ok := m.selectedProcess(); ok && (selected.Category == processdomain.CategoryDevelopment || hasContextTag(selected.Contexts, processdomain.ContextGitRepository)) {
+			m.Pending = &control.Request{Action: control.ActionGitFetch, Process: selected.Identity, Target: selected}
+			m.Message = fmt.Sprintf("Confirmar git fetch (dry-run) em '%s' (PID %d)?", selected.Command, selected.PID)
 		}
 	case "/":
 		m.Searching = true
@@ -395,6 +457,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Process:       selected.Identity,
 				ContainerName: selected.ContainerName,
 				ContainerID:   selected.ContainerID,
+				Target:        selected,
 			}
 			m.Message = fmt.Sprintf("Confirmar início do container '%s'?", name)
 			break

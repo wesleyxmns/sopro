@@ -157,17 +157,17 @@ func TestDockerProviderActionsAndExecute(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := p.Execute(ctx, "docker.stop", proc); err != nil {
+	if _, err := p.Execute(ctx, "docker.stop", proc); err != nil {
 		t.Fatalf("docker.stop failed: %v", err)
 	}
-	if err := p.Execute(ctx, "docker.restart", proc); err != nil {
+	if _, err := p.Execute(ctx, "docker.restart", proc); err != nil {
 		t.Fatalf("docker.restart failed: %v", err)
 	}
-	if err := p.Execute(ctx, "docker.pause", proc); err != nil {
+	if _, err := p.Execute(ctx, "docker.pause", proc); err != nil {
 		t.Fatalf("docker.pause failed: %v", err)
 	}
 
-	if err := p.Execute(ctx, "unknown.action", proc); err == nil {
+	if _, err := p.Execute(ctx, "unknown.action", proc); err == nil {
 		t.Fatal("expected error on unknown action")
 	}
 }
@@ -258,9 +258,7 @@ func TestDockerProviderStoppedContainersAndStart(t *testing.T) {
 		t.Fatalf("expected 1 docker.start action, got %+v", actions)
 	}
 
-	if err := p.Execute(context.Background(), "docker.start", proc); err != nil {
+	if _, err := p.Execute(context.Background(), "docker.start", proc); err != nil {
 		t.Fatalf("docker.start failed: %v", err)
 	}
 }
-
-

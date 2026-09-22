@@ -5,6 +5,8 @@ import (
 
 	"github.com/wesleyxmns/sopro/internal/app"
 	"github.com/wesleyxmns/sopro/internal/control"
+	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/provider"
 	"github.com/wesleyxmns/sopro/internal/updater"
 )
 
@@ -40,4 +42,12 @@ type updateCheckedMsg struct {
 type updateAppliedMsg struct {
 	release *updater.ReleaseInfo
 	err     error
+}
+
+type restartMsg struct{}
+
+type blankTabsLoadedMsg struct {
+	proc processdomain.Identity
+	tabs []provider.BlankTab
+	err  error
 }

@@ -184,16 +184,16 @@ func (s *Service) ContextualActions(ctx context.Context, proc processdomain.Info
 	return s.AvailableActions(ctx, proc)
 }
 
-func (s *Service) ExecuteContextualAction(ctx context.Context, actionID string, proc processdomain.Info) error {
+func (s *Service) ExecuteContextualAction(ctx context.Context, actionID string, proc processdomain.Info) (uint64, error) {
 	if s == nil || s.providers == nil {
-		return ErrUnsupported
+		return 0, ErrUnsupported
 	}
 	if !s.providers.SupportsAction(ctx, actionID, proc) {
-		return provider.ErrIncompatibleAction
+		return 0, provider.ErrIncompatibleAction
 	}
 	started := time.Now()
-	err := s.providers.Execute(ctx, actionID, proc)
-	return s.finishAction(actionID, proc.Identity, started, err, false, 0)
+	reclaimed, err := s.providers.Execute(ctx, actionID, proc)
+	return reclaimed, s.finishAction(actionID, proc.Identity, started, err, false, reclaimed)
 }
 
 func (s *Service) Capabilities() Capabilities {
@@ -268,6 +268,115 @@ func (s *Service) CleanCache(ctx context.Context) (uint64, error) {
 	}
 	reclaimed, err := s.deps.Cache.CleanCache(ctx)
 	return reclaimed, s.finishAction("clean-cache", processdomain.Identity{}, started, err, false, reclaimed)
+}
+
+// CacheTargets reports the safely-cleanable cache units of a single process.
+func (s *Service) CacheTargets(proc processdomain.Info) []provider.CacheTarget {
+	if s == nil || s.providers == nil {
+		return nil
+	}
+	return s.providers.CacheTargets(proc)
+}
+
+// PreviewBlankTabs lists the tabs close_blank would close. It performs I/O
+// and must be called asynchronously from the TUI.
+func (s *Service) PreviewBlankTabs(ctx context.Context, proc processdomain.Info) ([]provider.BlankTab, error) {
+	if s == nil || s.providers == nil {
+		return nil, ErrUnsupported
+	}
+	return s.providers.BlankTabs(ctx, proc)
+}
+
+// PreviewCleanAll scans a snapshot for every safely-cleanable cache unit: the
+// OS page cache first (when privileged and reclaimable), then one unit per
+// provider target across all processes. Targets sharing the same action and
+// detail (e.g. browser processes on the same CDP port) are listed once.
+func (s *Service) PreviewCleanAll(snapshot Snapshot) []provider.CacheTarget {
+	if s == nil {
+		return nil
+	}
+	var targets []provider.CacheTarget
+	if s.deps.Capabilities != nil && s.Capabilities().CanCleanCache && snapshot.Memory.Reclaimable > 0 {
+		targets = append(targets, provider.CacheTarget{
+			Source:   "SO",
+			ActionID: "clean-cache",
+			Label:    "Page cache, dentries e inodes",
+			Detail:   "≈ " + memory.FormatBytes(snapshot.Memory.Reclaimable),
+		})
+	}
+	if s.providers == nil {
+		return targets
+	}
+	seen := make(map[string]struct{})
+	for _, proc := range snapshot.Processes {
+		for _, target := range s.providers.CacheTargets(proc) {
+			// JVM details already carry the PID, so same-port browser
+			// processes collapse into one target while JVMs stay per-PID.
+			key := target.ActionID + "|" + target.Detail
+			if _, duplicated := seen[key]; duplicated {
+				continue
+			}
+			seen[key] = struct{}{}
+			targets = append(targets, target)
+		}
+	}
+	return targets
+}
+
+// CleanAllResult aggregates the outcome of cleaning every previewed target.
+type CleanAllResult struct {
+	ReclaimedBytes uint64
+	Succeeded      int
+	Failed         int
+}
+
+// CleanTargets cleans every given cache target, routing the OS page-cache
+// target to the platform cleaner and the remaining targets to their provider
+// actions. It returns an error only when no target could be cleaned, so
+// partial cleanups still report the reclaimed bytes and per-target counts.
+func (s *Service) CleanTargets(ctx context.Context, targets []provider.CacheTarget) (CleanAllResult, error) {
+	started := time.Now()
+	if s == nil {
+		return CleanAllResult{}, ErrUnsupported
+	}
+	if len(targets) == 0 {
+		return CleanAllResult{}, errors.New("no cleanable cache targets")
+	}
+	var result CleanAllResult
+	var firstErr error
+	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return result, s.finishAction("clean-cache-all", processdomain.Identity{}, started, err, false, result.ReclaimedBytes)
+		}
+		var err error
+		if target.ActionID == "clean-cache" {
+			var reclaimed uint64
+			if s.deps.Cache == nil {
+				err = ErrUnsupported
+			} else {
+				reclaimed, err = s.deps.Cache.CleanCache(ctx)
+				result.ReclaimedBytes += reclaimed
+			}
+		} else if s.providers == nil || !s.providers.SupportsAction(ctx, target.ActionID, target.Proc) {
+			err = provider.ErrIncompatibleAction
+		} else {
+			var reclaimed uint64
+			reclaimed, err = s.providers.Execute(ctx, target.ActionID, target.Proc)
+			result.ReclaimedBytes += reclaimed
+		}
+		if err != nil {
+			result.Failed++
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%s (%s): %w", target.Label, target.Source, err)
+			}
+			continue
+		}
+		result.Succeeded++
+	}
+	if result.Succeeded == 0 {
+		return result, s.finishAction("clean-cache-all", processdomain.Identity{}, started, firstErr, false, result.ReclaimedBytes)
+	}
+	return result, s.finishAction("clean-cache-all", processdomain.Identity{}, started, nil, false, result.ReclaimedBytes)
 }
 
 func (s *Service) finishAction(action string, id processdomain.Identity, started time.Time, operationErr error, escalated bool, reclaimed uint64) error {

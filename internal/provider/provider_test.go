@@ -17,13 +17,13 @@ type mockProvider struct {
 	returnErr error
 }
 
-func (m *mockProvider) Name() string { return m.name }
-func (m *mockProvider) Supports(processdomain.Info) bool { return m.supports }
+func (m *mockProvider) Name() string                                             { return m.name }
+func (m *mockProvider) Supports(processdomain.Info) bool                         { return m.supports }
 func (m *mockProvider) Detect(context.Context, processdomain.Info) []ContextInfo { return m.contexts }
-func (m *mockProvider) Actions(context.Context, processdomain.Info) []Action { return m.actions }
-func (m *mockProvider) Execute(_ context.Context, actionID string, _ processdomain.Info) error {
+func (m *mockProvider) Actions(context.Context, processdomain.Info) []Action     { return m.actions }
+func (m *mockProvider) Execute(_ context.Context, actionID string, _ processdomain.Info) (uint64, error) {
 	m.executed = actionID
-	return m.returnErr
+	return 0, m.returnErr
 }
 
 func TestRegistryDetectAndActions(t *testing.T) {
@@ -63,14 +63,14 @@ func TestRegistryDetectAndActions(t *testing.T) {
 		t.Fatalf("unexpected actions: %+v", actions)
 	}
 
-	if err := registry.Execute(ctx, "docker-stop", proc); err != nil {
+	if _, err := registry.Execute(ctx, "docker-stop", proc); err != nil {
 		t.Fatalf("failed to execute action: %v", err)
 	}
 	if p1.executed != "docker-stop" {
 		t.Fatalf("expected executed 'docker-stop', got %q", p1.executed)
 	}
 
-	if err := registry.Execute(ctx, "nonexistent", proc); err != ErrIncompatibleAction && err != ErrActionNotFound {
+	if _, err := registry.Execute(ctx, "nonexistent", proc); err != ErrIncompatibleAction && err != ErrActionNotFound {
 		t.Fatalf("expected ErrIncompatibleAction or ErrActionNotFound, got %v", err)
 	}
 }
@@ -103,9 +103,66 @@ func TestRegistryActionScopeAndSupportsAction(t *testing.T) {
 	}
 
 	// Executing cdp action on docker process must return ErrIncompatibleAction
-	err := registry.Execute(ctx, "cdp.close_blank", dockerProc)
+	_, err := registry.Execute(ctx, "cdp.close_blank", dockerProc)
 	if err != ErrIncompatibleAction {
 		t.Fatalf("expected ErrIncompatibleAction, got %v", err)
+	}
+}
+
+type mockCacheProvider struct {
+	mockProvider
+	targets []CacheTarget
+}
+
+func (m *mockCacheProvider) CacheTargets(proc processdomain.Info) []CacheTarget {
+	for index := range m.targets {
+		m.targets[index].Proc = proc
+	}
+	return m.targets
+}
+
+func TestRegistryCacheTargets(t *testing.T) {
+	scanner := &mockCacheProvider{
+		mockProvider: mockProvider{name: "jvm", supports: true},
+		targets:      []CacheTarget{{Source: "JVM", ActionID: "jvm.run_gc", Label: "GC"}},
+	}
+	plain := &mockProvider{name: "git", supports: true}
+	unsupported := &mockCacheProvider{
+		mockProvider: mockProvider{name: "cdp", supports: false},
+		targets:      []CacheTarget{{Source: "Navegador", ActionID: "cdp.close_blank"}},
+	}
+
+	registry := NewRegistry(scanner, plain, unsupported)
+	targets := registry.CacheTargets(processdomain.Info{Identity: processdomain.Identity{PID: 7}})
+	if len(targets) != 1 || targets[0].ActionID != "jvm.run_gc" {
+		t.Fatalf("unexpected cache targets: %+v", targets)
+	}
+	if targets[0].Proc.PID != 7 {
+		t.Fatalf("target proc PID = %d; want 7", targets[0].Proc.PID)
+	}
+
+	var nilRegistry *Registry
+	if targets := nilRegistry.CacheTargets(processdomain.Info{}); len(targets) != 0 {
+		t.Fatalf("expected no targets from nil registry, got %+v", targets)
+	}
+}
+
+func TestRegistryBlankTabsDelegatesToCDP(t *testing.T) {
+	client := newMockHTTPClient()
+	client.responses["http://127.0.0.1:9222/json/list"] = `[{"id": "t1", "title": "", "type": "page", "url": "about:blank"}]`
+	registry := NewRegistry(NewCDPProvider(client))
+	proc := processdomain.Info{
+		Category: processdomain.CategoryBrowser, Command: "chrome",
+		CommandLine: "chrome --remote-debugging-port=9222",
+	}
+
+	tabs, err := registry.BlankTabs(context.Background(), proc)
+	if err != nil || len(tabs) != 1 {
+		t.Fatalf("tabs = %+v, err = %v", tabs, err)
+	}
+
+	if _, err := registry.BlankTabs(context.Background(), processdomain.Info{Command: "bash"}); err != ErrIncompatibleAction {
+		t.Fatalf("err = %v; want ErrIncompatibleAction", err)
 	}
 }
 

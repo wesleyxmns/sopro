@@ -10,14 +10,14 @@ import (
 )
 
 type Config struct {
-	Interval            time.Duration
-	ObserveOnly         bool
-	PSISomeAvg10        float64
-	PSIFullAvg10        float64
-	MemoryUsagePct      float64
-	SustainedDuration   time.Duration
-	Cooldown            time.Duration
-	AllowCacheClean     bool
+	Interval          time.Duration
+	ObserveOnly       bool
+	PSISomeAvg10      float64
+	PSIFullAvg10      float64
+	MemoryUsagePct    float64
+	SustainedDuration time.Duration
+	Cooldown          time.Duration
+	AllowCacheClean   bool
 }
 
 func DefaultConfig() Config {
@@ -50,6 +50,7 @@ type Decision struct {
 	RecommendedAction  string
 	TargetProcess      *processdomain.Identity
 	Executed           bool
+	Failed             bool
 	Reason             string
 	SuspectedProcesses []processdomain.Identity
 }
@@ -135,6 +136,7 @@ func (d *Daemon) Tick(ctx context.Context) (Decision, error) {
 			reclaimed, cleanErr := d.service.CleanCache(ctx)
 			if cleanErr != nil {
 				decision.Executed = false
+				decision.Failed = true
 				decision.Reason = fmt.Sprintf("execução de limpeza de cache falhou: %v", cleanErr)
 			} else {
 				decision.Executed = true

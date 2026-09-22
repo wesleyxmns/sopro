@@ -1,0 +1,15 @@
+[Unit]
+Description=Sopro memory daemon (observe-only by default)
+Documentation=https://github.com/wesleyxmns/sopro
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sopro --daemon
+# To allow automatic relief actions instead of observe-only mode:
+# ExecStart=/usr/local/bin/sopro --daemon --daemon-enforce
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

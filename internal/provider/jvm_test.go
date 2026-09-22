@@ -67,10 +67,54 @@ func TestJVMProviderActionsAndExecute(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := p.Execute(ctx, "jvm.run_gc", proc); err != nil {
+	if _, err := p.Execute(ctx, "jvm.run_gc", proc); err != nil {
 		t.Fatalf("failed to execute jvm.run_gc: %v", err)
 	}
 	if len(runner.calls) != 1 {
 		t.Fatalf("expected 1 command call, got %d", len(runner.calls))
+	}
+}
+
+func TestReclaimedBytesGuardsUnreadableDrops(t *testing.T) {
+	cases := []struct {
+		name        string
+		before, aft uint64
+		want        uint64
+	}{
+		{"drop", 1000, 600, 400},
+		{"growth", 600, 1000, 0},
+		{"same", 600, 600, 0},
+		{"vanished", 600, 0, 0},
+		{"unreadable before", 0, 600, 0},
+	}
+	for _, tc := range cases {
+		if got := reclaimedBytes(tc.before, tc.aft); got != tc.want {
+			t.Fatalf("%s: got %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestJVMProviderCacheTargets(t *testing.T) {
+	p := NewJVMProvider(newMockCommandRunner())
+	proc := processdomain.Info{
+		Identity: processdomain.Identity{PID: 4242},
+		Category: processdomain.CategoryJVM,
+		Command:  "java",
+	}
+
+	targets := p.CacheTargets(proc)
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 cache target, got %d", len(targets))
+	}
+	target := targets[0]
+	if target.ActionID != "jvm.run_gc" || target.Source != "JVM" {
+		t.Fatalf("unexpected target: %+v", target)
+	}
+	if target.Proc.PID != 4242 {
+		t.Fatalf("target proc PID = %d; want 4242", target.Proc.PID)
+	}
+
+	if targets := p.CacheTargets(processdomain.Info{}); len(targets) != 0 {
+		t.Fatalf("expected no targets without PID, got %+v", targets)
 	}
 }

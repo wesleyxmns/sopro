@@ -39,7 +39,10 @@ ARCH="$(uname -m)"
 
 case "$OS" in
     linux)  OS="linux" ;;
-    darwin) OS="darwin" ;;
+    darwin)
+        log_error "macOS ainda não possui binários oficiais (apenas Linux; Windows via releases no GitHub)."
+        exit 1
+        ;;
     *)
         log_error "Sistema operacional não suportado: $OS"
         exit 1

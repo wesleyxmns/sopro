@@ -34,21 +34,20 @@ func (id Identity) Validate() error {
 
 type Info struct {
 	Identity
-	ParentPID   int32
-	User        string
-	MemoryBytes uint64
-	MemoryPct   float32
-	CPUPct      float64
-	Command     string
-	CommandLine string
-	Cwd         string
-	State       State
-	Risk        Risk
-	Category    Category
-	Contexts    []ContextTag
+	ParentPID     int32
+	User          string
+	MemoryBytes   uint64
+	MemoryPct     float32
+	CPUPct        float64
+	Command       string
+	CommandLine   string
+	Cwd           string
+	State         State
+	Risk          Risk
+	Category      Category
+	Contexts      []ContextTag
 	ContainerID   string
 	ContainerName string
 	ImageName     string
-	Reclaimable uint64
-	Leak        LeakAssessment
+	Leak          LeakAssessment
 }

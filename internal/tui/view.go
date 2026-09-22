@@ -216,32 +216,52 @@ func (m Model) renderMemoryTrend(width int) string {
 	if len(m.memoryHistory) == 0 {
 		return m.theme.Muted.Render("HISTÓRICO  aguardando amostras")
 	}
-	maxPoints := max(width-11, 1)
+	// The trend shares a narrow column (30–42 cells) with the usage block,
+	// so the legend stays compact: min–max range + window. The current value
+	// is already shown in "USO DA MEMÓRIA" right above.
+	const legendReserve = 16 // two spaces + "100–100% · 60s"
+	maxPoints := max(width-11-legendReserve, 1)
 	start := max(len(m.memoryHistory)-maxPoints, 0)
+	visible := m.memoryHistory[start:]
+
+	runes := []rune(levels)
 	var trend strings.Builder
-	for _, snapshot := range m.memoryHistory[start:] {
-		percent := 0
-		if snapshot.Total > 0 {
-			percent = min(int(float64(snapshot.Used)/float64(snapshot.Total)*100), 100)
-		}
-		index := min(percent*(len([]rune(levels))-1)/100, len([]rune(levels))-1)
-		trend.WriteRune([]rune(levels)[index])
+	minPercent, maxPercent := 100, 0
+	for _, snapshot := range visible {
+		percent := usedPercent(snapshot)
+		minPercent = min(minPercent, percent)
+		maxPercent = max(maxPercent, percent)
+		trend.WriteRune(runes[min(percent*(len(runes)-1)/100, len(runes)-1)])
 	}
-	return m.theme.Muted.Render("HISTÓRICO  ") + m.theme.Focus.Render(trend.String())
+	windowSecs := len(visible) * int(refreshInterval.Seconds())
+	legend := fmt.Sprintf("%d–%d%% · %ds", minPercent, maxPercent, windowSecs)
+	line := m.theme.Muted.Render("HISTÓRICO  ") + m.theme.Focus.Render(trend.String()) + "  " + m.theme.Muted.Render(legend)
+	return ansi.Truncate(line, width, "…")
+}
+
+func usedPercent(snapshot memory.Snapshot) int {
+	if snapshot.Total == 0 {
+		return 0
+	}
+	return min(int(float64(snapshot.Used)/float64(snapshot.Total)*100), 100)
 }
 
 func (m Model) renderMemoryGrid(width int) string {
 	metrics := m.Snapshot.Memory
 	contentWidth := max(width-2, 3)
 	baseWidth := max(contentWidth/3, 1)
-	widths := []int{baseWidth, baseWidth, max(contentWidth-baseWidth*2, 1)}
+	// The middle cell carries the "[T]" clean-all hint, so it borrows a
+	// column from each neighbor to keep the full label visible.
+	middleWidth := baseWidth + 2
+	sideWidth := max(baseWidth-1, 1)
+	widths := []int{sideWidth, middleWidth, max(contentWidth-sideWidth-middleWidth, 1)}
 	separator := m.theme.Divider.Render("│")
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		m.renderMetricCell("DISPONÍVEL", memory.FormatBytes(metrics.Available), "livre p/ uso", widths[0]),
 		separator,
-		m.renderMetricCell("RECUPERÁVEL", memory.FormatBytes(metrics.Reclaimable), "cache "+memory.FormatBytes(metrics.Cache), widths[1]),
+		m.renderReclaimableCell(metrics, widths[1]),
 		separator,
 		m.renderMetricCell("SWAP", memory.FormatBytes(metrics.SwapUsed), "de "+memory.FormatBytes(metrics.SwapTotal), widths[2]),
 	)
@@ -252,6 +272,16 @@ func (m Model) renderMetricCell(label, value, note string, width int) string {
 		m.theme.Muted.Render(ansi.Truncate(label, width, "…")),
 		m.theme.Strong.Render(ansi.Truncate(value, width, "…")),
 		m.theme.Muted.Render(ansi.Truncate(note, width, "…")),
+	}
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderReclaimableCell(metrics memory.Snapshot, width int) string {
+	label := m.theme.Muted.Render("RECUPERÁVEL ") + m.theme.Focus.Render("[T]")
+	lines := []string{
+		ansi.Truncate(label, width, "…"),
+		m.theme.Strong.Render(ansi.Truncate(memory.FormatBytes(metrics.Reclaimable), width, "…")),
+		m.theme.Muted.Render(ansi.Truncate("cache "+memory.FormatBytes(metrics.Cache), width, "…")),
 	}
 	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
 }
@@ -376,6 +406,9 @@ func (m Model) renderProcessRows(width int, mode layoutMode) string {
 		}
 		if m.groupMode == groupTree {
 			command = strings.Repeat("  ", m.processDepth[proc.Identity]) + "└ " + command
+		}
+		if proc.Leak.Status == processdomain.LeakSuspected {
+			command += " [vazamento?]"
 		}
 
 		pidStr := strconv.Itoa(int(proc.PID))
@@ -582,13 +615,7 @@ func (m Model) renderPanelActions(proc processdomain.Info, width int) string {
 		fourth := m.renderKeyHint(keyHint{"z", "docker pause"})
 		lines = append(lines, ansi.Truncate(third, width, ""), ansi.Truncate(fourth, width, ""))
 	} else if proc.Category == processdomain.CategoryBrowser || hasContextTag(proc.Contexts, processdomain.ContextBrowserDebug) {
-		third := lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			lipgloss.NewStyle().Width(columnWidth).Render(m.renderKeyHint(keyHint{"b", "fechar vazias"})),
-			"  ",
-			m.renderKeyHint(keyHint{"a", "suspender abas"}),
-		)
-		lines = append(lines, ansi.Truncate(third, width, ""))
+		lines = append(lines, ansi.Truncate(m.renderKeyHint(keyHint{"b", "fechar vazias"}), width, ""))
 	} else if proc.Category == processdomain.CategoryJVM || hasContextTag(proc.Contexts, processdomain.ContextTag("jvm-runtime")) {
 		lines = append(lines, ansi.Truncate(m.renderKeyHint(keyHint{"j", "forçar GC"}), width, ""))
 	} else if proc.Category == processdomain.CategoryDevelopment || hasContextTag(proc.Contexts, processdomain.ContextGitRepository) {

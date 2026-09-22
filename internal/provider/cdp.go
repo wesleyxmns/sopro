@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
@@ -23,7 +24,15 @@ type HTTPClient interface {
 }
 
 type CDPProvider struct {
-	client HTTPClient
+	client       HTTPClient
+	mu           sync.RWMutex
+	detectByPort map[int]cachedDetect
+	cacheTTL     time.Duration
+}
+
+type cachedDetect struct {
+	contexts  []ContextInfo
+	fetchedAt time.Time
 }
 
 func NewCDPProvider(client ...HTTPClient) *CDPProvider {
@@ -31,7 +40,7 @@ func NewCDPProvider(client ...HTTPClient) *CDPProvider {
 	if len(client) > 0 && client[0] != nil {
 		c = client[0]
 	}
-	return &CDPProvider{client: c}
+	return &CDPProvider{client: c, detectByPort: make(map[int]cachedDetect), cacheTTL: 5 * time.Second}
 }
 
 func (c *CDPProvider) Name() string {
@@ -59,7 +68,31 @@ func (c *CDPProvider) Detect(ctx context.Context, proc processdomain.Info) []Con
 	if port <= 0 {
 		return nil
 	}
+	if cached, ok := c.cachedDetect(port); ok {
+		return cached
+	}
+	contexts := c.detectLive(ctx, port)
+	c.storeDetect(port, contexts)
+	return contexts
+}
 
+func (c *CDPProvider) cachedDetect(port int) ([]ContextInfo, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, ok := c.detectByPort[port]
+	if !ok || time.Since(entry.fetchedAt) >= c.cacheTTL {
+		return nil, false
+	}
+	return entry.contexts, true
+}
+
+func (c *CDPProvider) storeDetect(port int, contexts []ContextInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.detectByPort[port] = cachedDetect{contexts: contexts, fetchedAt: time.Now()}
+}
+
+func (c *CDPProvider) detectLive(ctx context.Context, port int) []ContextInfo {
 	details := map[string]string{
 		"port": strconv.Itoa(port),
 	}
@@ -99,6 +132,22 @@ func (c *CDPProvider) Detect(ctx context.Context, proc processdomain.Info) []Con
 	}
 }
 
+func (c *CDPProvider) CacheTargets(proc processdomain.Info) []CacheTarget {
+	port := extractCDPPort(proc.CommandLine, proc.Command)
+	if port <= 0 {
+		return nil
+	}
+	return []CacheTarget{
+		{
+			Source:   "Navegador",
+			ActionID: "cdp.close_blank",
+			Label:    "Fechar abas em branco",
+			Detail:   fmt.Sprintf("porta %d", port),
+			Proc:     proc,
+		},
+	}
+}
+
 func (c *CDPProvider) Actions(ctx context.Context, proc processdomain.Info) []Action {
 	port := extractCDPPort(proc.CommandLine, proc.Command)
 	if port <= 0 {
@@ -112,80 +161,91 @@ func (c *CDPProvider) Actions(ctx context.Context, proc processdomain.Info) []Ac
 			Description: fmt.Sprintf("Fecha páginas sobre:blank abertas no navegador (porta %d)", port),
 			Danger:      false,
 		},
-		{
-			ID:          "cdp.discard_inactive",
-			Scope:       ScopeBrowser,
-			Label:       "suspender abas inativas",
-			Description: fmt.Sprintf("Descarta da memória abas inativas do navegador (porta %d)", port),
-			Danger:      false,
-		},
 	}
 }
 
-func (c *CDPProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) error {
+func (c *CDPProvider) Execute(ctx context.Context, actionID string, proc processdomain.Info) (uint64, error) {
 	port := extractCDPPort(proc.CommandLine, proc.Command)
 	if port <= 0 {
-		return fmt.Errorf("%w: porta CDP não identificada", ErrUnsupported)
+		return 0, fmt.Errorf("%w: porta CDP não identificada", ErrUnsupported)
 	}
 
 	switch actionID {
 	case "cdp.close_blank":
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", port), nil)
+		blanks, err := c.listBlankTargets(ctx, port)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		resp, err := c.client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		var targets []cdpTarget
-		if err := json.Unmarshal(body, &targets); err != nil {
-			return err
-		}
-		for _, target := range targets {
-			if target.Type == "page" && (target.URL == "about:blank" || target.URL == "chrome://newtab/" || target.URL == "edge://newtab/") {
-				closeReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/close/%s", port, target.ID), nil)
-				if closeReq != nil {
-					closeResp, closeErr := c.client.Do(closeReq)
-					if closeErr == nil && closeResp != nil {
-						closeResp.Body.Close()
-					}
+		for _, target := range blanks {
+			closeReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/close/%s", port, target.ID), nil)
+			if closeReq != nil {
+				closeResp, closeErr := c.client.Do(closeReq)
+				if closeErr == nil && closeResp != nil {
+					closeResp.Body.Close()
 				}
 			}
 		}
-		return nil
-	case "cdp.discard_inactive":
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", port), nil)
-		if err != nil {
-			return err
-		}
-		resp, err := c.client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		var targets []cdpTarget
-		if err := json.Unmarshal(body, &targets); err != nil {
-			return err
-		}
-		for _, target := range targets {
-			if target.Type == "page" && (target.URL == "about:blank" || target.URL == "chrome://newtab/") {
-				closeReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/close/%s", port, target.ID), nil)
-				if closeReq != nil {
-					closeResp, closeErr := c.client.Do(closeReq)
-					if closeErr == nil && closeResp != nil {
-						closeResp.Body.Close()
-					}
-				}
-			}
-		}
-		return nil
+		return 0, nil
 	default:
-		return fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
+		return 0, fmt.Errorf("%w: ação %s", ErrActionNotFound, actionID)
 	}
+}
+
+// BlankTab is a closable blank tab for confirmation previews.
+type BlankTab struct {
+	Title string
+	URL   string
+}
+
+// DisplayName prefers the tab title, falling back to the URL.
+func (t BlankTab) DisplayName() string {
+	if strings.TrimSpace(t.Title) != "" {
+		return t.Title
+	}
+	return t.URL
+}
+
+// BlankTabs lists the tabs close_blank would close for the process.
+func (c *CDPProvider) BlankTabs(ctx context.Context, proc processdomain.Info) ([]BlankTab, error) {
+	port := extractCDPPort(proc.CommandLine, proc.Command)
+	if port <= 0 {
+		return nil, fmt.Errorf("%w: porta CDP não identificada", ErrUnsupported)
+	}
+	targets, err := c.listBlankTargets(ctx, port)
+	if err != nil {
+		return nil, err
+	}
+	tabs := make([]BlankTab, 0, len(targets))
+	for _, target := range targets {
+		tabs = append(tabs, BlankTab{Title: target.Title, URL: target.URL})
+	}
+	return tabs, nil
+}
+
+// listBlankTargets shares the blank-tab definition between execution and
+// previews so the confirmation modal lists exactly what will be closed.
+func (c *CDPProvider) listBlankTargets(ctx context.Context, port int) ([]cdpTarget, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", port), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var targets []cdpTarget
+	if err := json.Unmarshal(body, &targets); err != nil {
+		return nil, err
+	}
+	var blanks []cdpTarget
+	for _, target := range targets {
+		if target.Type == "page" && (target.URL == "about:blank" || target.URL == "chrome://newtab/" || target.URL == "edge://newtab/") {
+			blanks = append(blanks, target)
+		}
+	}
+	return blanks, nil
 }
 
 func extractCDPPort(commandLine, command string) int {

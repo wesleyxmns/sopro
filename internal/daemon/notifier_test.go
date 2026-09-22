@@ -2,6 +2,9 @@ package daemon
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +20,72 @@ type mockAuditRecorder struct {
 func (m *mockAuditRecorder) Record(e audit.Event) error {
 	m.events = append(m.events, e)
 	return nil
+}
+
+func TestJSONNotifierEmitsOneDecisionPerLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	notifier := NewJSONNotifier(buf)
+
+	decision := Decision{
+		Timestamp:          time.Date(2026, 8, 28, 16, 30, 0, 0, time.UTC),
+		UnderPressure:      true,
+		PressureDuration:   15 * time.Second,
+		RecommendedAction:  "clean-cache",
+		Reason:             "modo observação: limpeza recomendada",
+		SuspectedProcesses: []processdomain.Identity{{PID: 101}},
+	}
+	notifier.Notify(decision)
+	output := buf.String()
+	for _, expected := range []string{
+		`"under_pressure":true`, `"pressure_duration":"15s"`,
+		`"recommended_action":"clean-cache"`, `"pid":101`,
+		`"executed":false`, `"failed":false`,
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("JSON output omitted %s: %s", expected, output)
+		}
+	}
+	if lines := strings.Count(output, "\n"); lines != 1 {
+		t.Fatalf("JSON lines = %d; want 1", lines)
+	}
+}
+
+func TestWebhookNotifierFiresOnTransitionsAndRemedies(t *testing.T) {
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(payload))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	notifier := NewWebhookNotifier(server.URL)
+	normal := Decision{Timestamp: time.Now(), Reason: "pressão normal"}
+	pressure := Decision{Timestamp: time.Now(), UnderPressure: true, Reason: "pressão elevada"}
+	remedy := Decision{Timestamp: time.Now(), UnderPressure: true, Executed: true, Reason: "limpeza executada"}
+
+	notifier.Notify(normal)
+	notifier.Notify(pressure)
+	notifier.Notify(pressure)
+	notifier.Notify(remedy)
+	notifier.Notify(normal)
+	notifier.Notify(pressure)
+
+	if len(bodies) != 3 {
+		t.Fatalf("webhook calls = %d; want 3 (transition, remedy, re-alert)", len(bodies))
+	}
+	if !strings.Contains(bodies[0], `"under_pressure":true`) {
+		t.Fatalf("first payload = %s; want pressure decision", bodies[0])
+	}
+	if !strings.Contains(bodies[1], `"executed":true`) {
+		t.Fatalf("second payload = %s; want executed remedy", bodies[1])
+	}
+
+	quiet := NewWebhookNotifier("")
+	quiet.Notify(pressure)
+
+	var nilNotifier *WebhookNotifier
+	nilNotifier.Notify(pressure)
 }
 
 func TestLogNotifierFormatsDecisions(t *testing.T) {
@@ -88,6 +157,72 @@ func TestAuditNotifierRecordsEvents(t *testing.T) {
 	}
 	if recorder.events[1].Action != "daemon-remedy" || !recorder.events[1].Success {
 		t.Fatalf("unexpected event: %+v", recorder.events[1])
+	}
+}
+
+func TestAuditNotifierTreatsObservationAsSuccess(t *testing.T) {
+	recorder := &mockAuditRecorder{}
+	notifier := NewAuditNotifier(recorder)
+
+	notifier.Notify(Decision{
+		Timestamp:         time.Now(),
+		UnderPressure:     true,
+		RecommendedAction: "clean-cache",
+		Reason:            "modo observação: limpeza de cache recomendada mas não executada",
+	})
+	if len(recorder.events) != 1 {
+		t.Fatalf("expected 1 event for observe-mode alert, got %d", len(recorder.events))
+	}
+	event := recorder.events[0]
+	if event.Action != "daemon-alert" {
+		t.Fatalf("action = %q; want daemon-alert", event.Action)
+	}
+	if !event.Success {
+		t.Fatalf("observe-mode alert recorded as failure: %+v", event)
+	}
+	if event.Error != "" {
+		t.Fatalf("observe-mode alert recorded error %q; want empty", event.Error)
+	}
+}
+
+func TestAuditNotifierRecordsFailedRemedy(t *testing.T) {
+	recorder := &mockAuditRecorder{}
+	notifier := NewAuditNotifier(recorder)
+
+	notifier.Notify(Decision{
+		Timestamp:         time.Now(),
+		UnderPressure:     true,
+		RecommendedAction: "clean-cache",
+		Failed:            true,
+		Reason:            "execução de limpeza de cache falhou: permissão negada",
+	})
+	if len(recorder.events) != 1 {
+		t.Fatalf("expected 1 event for failed remedy, got %d", len(recorder.events))
+	}
+	event := recorder.events[0]
+	if event.Action != "daemon-remedy" {
+		t.Fatalf("action = %q; want daemon-remedy", event.Action)
+	}
+	if event.Success {
+		t.Fatalf("failed remedy recorded as success: %+v", event)
+	}
+	if !strings.Contains(event.Error, "permissão negada") {
+		t.Fatalf("error = %q; want failure reason", event.Error)
+	}
+}
+
+func TestLogNotifierMarksFailedRemedy(t *testing.T) {
+	buf := &bytes.Buffer{}
+	notifier := NewLogNotifier(buf)
+
+	notifier.Notify(Decision{
+		Timestamp:     time.Date(2026, 8, 28, 16, 30, 0, 0, time.UTC),
+		UnderPressure: true,
+		Failed:        true,
+		Reason:        "execução de limpeza de cache falhou: permissão negada",
+	})
+	if output := buf.String(); !strings.Contains(output, "FALHA") {
+		t.Fatalf("missing FALHA status in output: %s", output)
 	}
 }
 

@@ -4,9 +4,13 @@
 
 </div>
 
----
+# Sopro — Monitor de memória RAM e gerenciador de processos no terminal
 
-Sopro é uma ferramenta de linha de comando (CLI) e TUI responsiva para **observabilidade de memória e controle de processos** com limites explícitos de segurança e ações contextuais inteligentes (Docker, Navegadores, JVM, Git).
+[![CI](https://github.com/wesleyxmns/sopro/actions/workflows/ci.yml/badge.svg)](https://github.com/wesleyxmns/sopro/actions/workflows/ci.yml)
+
+*Terminal RAM monitor and process manager for Linux and Windows: clean page cache, manage Docker containers, browser tabs and JVM processes — a fast TUI written in Go.*
+
+Sopro é uma ferramenta de linha de comando (CLI) e TUI responsiva para **observabilidade de memória e controle de processos** com limites explícitos de segurança e ações contextuais inteligentes (Docker, Navegadores, JVM, Git). Monitore o uso de RAM em tempo real, limpe cache e page cache do Linux, libere memória, gerencie containers Docker, abas do navegador e processos JVM direto do terminal Linux e Windows.
 
 A interface usa Bubble Tea, Bubbles e Lip Gloss; o acesso ao sistema operacional fica isolado em adaptadores Linux e Windows.
 
@@ -14,7 +18,7 @@ A interface usa Bubble Tea, Bubbles e Lip Gloss; o acesso ao sistema operacional
 
 ## 🚀 Instalação
 
-### Opção 1: Instalação Rápida (Linux / macOS)
+### Opção 1: Instalação Rápida (Linux)
 
 Execute no terminal para baixar e instalar a versão estável mais recente:
 
@@ -83,6 +87,15 @@ sopro --help
 
 # Iniciar em modo daemon (observação em segundo plano sem interface)
 sopro --daemon
+
+# Daemon com decisões em JSON (uma por linha, para scraping)
+sopro --daemon --daemon-json
+
+# Daemon com alertas webhook (transições de pressão e remédios executados)
+sopro --daemon --daemon-webhook-url https://exemplo.com/hook
+
+# Listar os últimos eventos de auditoria
+sopro audit --last 20
 ```
 
 Quando o binário estiver em um diretório protegido, como `/usr/local/bin`, o
@@ -91,11 +104,24 @@ comando de atualização solicitará permissão administrativa pelo `sudo`. A se
 
 ---
 
+## ⚙️ Configuração
+
+Além de flags e variáveis `SOPRO_*`, o Sopro lê o arquivo `~/.config/sopro/sopro.conf` (ou o caminho de `SOPRO_CONFIG`) no formato `CHAVE=valor`, uma por linha. Precedência: **flag > variável de ambiente > arquivo > padrão**.
+
+```bash
+# ~/.config/sopro/sopro.conf
+SOPRO_THEME=dark
+SOPRO_DAEMON_INTERVAL=5s
+SOPRO_DAEMON_MEMORY_THRESHOLD=85
+```
+
+Para operar o daemon via systemd, veja o exemplo em [`contrib/sopro-daemon.service`](contrib/sopro-daemon.service) (modo observação por padrão; descomente a linha `--daemon-enforce` para ações automáticas).
+
 ## ⌨️ Atalhos de Teclado (TUI)
 
 | Atalho | Ação |
 |---|---|
-| `↑` / `↓`, `j` / `k` | Navegar pela lista de processos |
+| `↑` / `↓` | Navegar pela lista de processos |
 | `/` | Pesquisa fuzzy rápida por nome/comando |
 | `f`, `tab` | Alternar filtros de categoria (Sistema, Containers, Browser, Dev, JVM, etc.) |
 | `s` | Alternar ordenação por Memória ↓, CPU ↓ ou Comando ↑ |
@@ -103,15 +129,32 @@ comando de atualização solicitará permissão administrativa pelo `sudo`. A se
 | `p` | Pausar (`SIGSTOP`) ou retomar (`SIGCONT`) processo |
 | `x` | Encerrar processo graciosamente (`SIGTERM`) |
 | `k` | Forçar encerramento imediato (`SIGKILL`) |
-| `c` | Limpar cache do sistema operacional (quando permitido) |
+| `c` | Limpar cache do serviço selecionado (JVM, navegador via CDP) |
+| `T` | Limpeza total: SO + todos os serviços com cache limpável |
 | `d` / `r` / `z` / `s` | Ações de container Docker (stop, restart, pause, start) |
-| `b` / `a` | Ações de navegador via CDP (fechar abas em branco, suspender abas) |
-| `u` | Verificar novamente ou instalar uma atualização disponível |
+| `b` | Fechar abas em branco do navegador via CDP |
+| `u` | Verificar/instalar atualização (reinicia sozinho após instalar) |
 | `j` | Forçar Garbage Collection em runtime JVM (`jcmd GC.run`) |
 | `w` / `v` | Ações de repositório Git (`git status`, `git fetch`) |
 | `enter` / `y` | Confirmar ação no diálogo modal |
 | `esc` / `n` | Cancelar ação / limpar busca |
 | `q` | Sair do Sopro |
+
+---
+
+## 🧹 Limpeza de cache
+
+Só é considerado limpável o cache cuja limpeza **não altera bruscamente o funcionamento** do serviço:
+
+- **Sistema operacional:** page cache, dentries e inodes no Linux (`sync` + `drop_caches`, requer privilégio); working sets via `EmptyWorkingSet` no Windows.
+- **JVM:** coleta de lixo no heap (`jcmd <pid> GC.run`); o resultado informa os bytes residentes liberados quando mensuráveis.
+- **Navegador:** fechamento de abas em branco via CDP (exige `--remote-debugging-port`).
+
+Containers Docker e repositórios Git não entram na limpeza: não há operação segura e não disruptiva que libere cache deles (prune Docker libera disco, não RAM, e é destrutivo).
+
+- `c` limpa o cache do serviço selecionado.
+- `T` varre SO + serviços e limpa tudo de uma vez.
+- Ambos listam no modal de confirmação exatamente o que será limpo antes de executar.
 
 ---
 

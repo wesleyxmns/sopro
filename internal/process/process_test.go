@@ -23,4 +23,3 @@ func TestInfoContainerFields(t *testing.T) {
 		t.Fatalf("container fields mismatch: %+v", info)
 	}
 }
-

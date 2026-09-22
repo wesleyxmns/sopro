@@ -10,9 +10,11 @@ import (
 	"github.com/wesleyxmns/sopro/internal/control"
 	"github.com/wesleyxmns/sopro/internal/memory"
 	processdomain "github.com/wesleyxmns/sopro/internal/process"
+	"github.com/wesleyxmns/sopro/internal/provider"
 	"github.com/wesleyxmns/sopro/internal/updater"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type fakeBackend struct {
@@ -548,6 +550,108 @@ func TestSnapshotRefreshPreservesUpdaterMessages(t *testing.T) {
 	}
 }
 
+func TestSuccessfulUpdateSchedulesRestart(t *testing.T) {
+	model, _ := newTestModel()
+	updated, command := model.Update(updateAppliedMsg{release: &updater.ReleaseInfo{TagName: "v9.9.9"}})
+	model = updated.(Model)
+	if !model.RestartRequested {
+		t.Fatal("successful update did not request a restart")
+	}
+	if !strings.Contains(model.Message, "Reiniciando") {
+		t.Fatalf("message = %q; want restart feedback", model.Message)
+	}
+	if command == nil {
+		t.Fatal("successful update did not schedule the restart delay")
+	}
+}
+
+func TestKeysAreIgnoredWhileRestartIsPending(t *testing.T) {
+	model, _ := newTestModel()
+	model.RestartRequested = true
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	model = updated.(Model)
+	if model.Pending != nil {
+		t.Fatalf("keys must be ignored while restart is pending, got %+v", model.Pending)
+	}
+}
+
+func TestBrowserKeyPreviewsBlankTabs(t *testing.T) {
+	model, backend := newTestModel()
+	snapshot := backend.snapshot
+	snapshot.Processes[0].Category = processdomain.CategoryBrowser
+	snapshot.Processes[0].Command = "chrome"
+	snapshot.Processes[0].CommandLine = "chrome --remote-debugging-port=9222"
+	model.applySnapshot(snapshot)
+
+	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	model = updated.(Model)
+	if model.Pending == nil || model.Pending.Action != control.ActionCDPCloseBlank {
+		t.Fatalf("expected pending close_blank, got %+v", model.Pending)
+	}
+	if command == nil {
+		t.Fatal("expected async tab preview command")
+	}
+
+	identity := snapshot.Processes[0].Identity
+	tabs := []provider.BlankTab{
+		{Title: "New Tab"}, {URL: "about:blank"}, {Title: "Blank"}, {Title: "Empty"}, {Title: "Void"},
+	}
+	updated, _ = model.Update(blankTabsLoadedMsg{proc: identity, tabs: tabs})
+	model = updated.(Model)
+	if len(model.PendingTabs) != 5 {
+		t.Fatalf("pending tabs = %d; want 5", len(model.PendingTabs))
+	}
+	view := model.View()
+	for _, expected := range []string{"Serão fechadas (5)", "New Tab", "about:blank", "+2 outras"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("confirmation modal omitted %q", expected)
+		}
+	}
+
+	updated, _ = model.Update(blankTabsLoadedMsg{proc: processdomain.Identity{PID: 999}, tabs: []provider.BlankTab{{Title: "Stale"}}})
+	model = updated.(Model)
+	if len(model.PendingTabs) != 5 {
+		t.Fatal("stale preview overwrote current pending tabs")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if model.PendingTabs != nil {
+		t.Fatal("cancel did not clear pending tabs")
+	}
+}
+
+func TestContextualResultMessageIncludesReclaimedBytes(t *testing.T) {
+	model, _ := newTestModel()
+	updated, _ := model.Update(actionFinishedMsg{
+		result: control.Result{Action: control.ActionJVMRunGC, Process: processdomain.Identity{PID: 7}, Reclaimed: 2048},
+	})
+	model = updated.(Model)
+	if !strings.Contains(model.Message, "2.00 KB") || !strings.Contains(model.Message, "recuperados") {
+		t.Fatalf("message = %q; want reclaimed bytes", model.Message)
+	}
+}
+
+func TestElevationHintMatchesPlatform(t *testing.T) {
+	if got := elevationHint("linux"); got != "execute sudo sopro update" {
+		t.Fatalf("linux hint = %q", got)
+	}
+	if got := elevationHint("windows"); !strings.Contains(got, "Administrador") || strings.Contains(got, "sudo") {
+		t.Fatalf("windows hint = %q; must not mention sudo", got)
+	}
+}
+
+func TestRestartMessageQuitsTUI(t *testing.T) {
+	model, _ := newTestModel()
+	_, command := model.Update(restartMsg{})
+	if command == nil {
+		t.Fatal("restart message returned no command")
+	}
+	if _, ok := command().(tea.QuitMsg); !ok {
+		t.Fatal("restart message did not quit the TUI")
+	}
+}
+
 func TestSnapshotRecoveryClearsOnlySnapshotFailure(t *testing.T) {
 	m, backend := newTestModel()
 	updated, _ := m.Update(snapshotLoadedMsg{err: errors.New("offline")})
@@ -567,5 +671,235 @@ func TestSnapshotRecoveryClearsOnlySnapshotFailure(t *testing.T) {
 	m = updated.(Model)
 	if m.Message != "" {
 		t.Fatalf("snapshot refresh changed cleanup for ordinary status: %q", m.Message)
+	}
+}
+
+func cacheFixtureSnapshot() app.Snapshot {
+	return app.Snapshot{
+		Memory: memory.Snapshot{Reclaimable: 2 * 1024 * 1024 * 1024},
+		Processes: []processdomain.Info{
+			{
+				Identity:    processdomain.Identity{PID: 7001, StartedAt: 1},
+				Command:     "java",
+				CommandLine: "java -Xmx4g -jar app.jar",
+				Category:    processdomain.CategoryJVM,
+				State:       processdomain.StateRunning,
+			},
+			{
+				Identity:    processdomain.Identity{PID: 7002, StartedAt: 2},
+				Command:     "chrome",
+				CommandLine: "chrome --remote-debugging-port=9222",
+				Category:    processdomain.CategoryBrowser,
+				State:       processdomain.StateRunning,
+			},
+			{
+				Identity: processdomain.Identity{PID: 7003, StartedAt: 3},
+				Command:  "bash",
+				Category: processdomain.CategorySystem,
+				State:    processdomain.StateRunning,
+			},
+		},
+	}
+}
+
+func newCacheTestModel(snapshot app.Snapshot) Model {
+	backend := &fakeBackend{snapshot: snapshot}
+	service := app.NewService(app.Dependencies{
+		Snapshots: backend, Processes: backend, Cache: backend, Capabilities: backend,
+	}, app.WithProviderRegistry(provider.NewRegistry(provider.NewJVMProvider(), provider.NewCDPProvider())))
+	model := NewModel(service)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	model = updated.(Model)
+	model.ShowSplash = false
+	model.applySnapshot(snapshot)
+	return model
+}
+
+func TestModelCleanServiceKeyResolvesSelectedTarget(t *testing.T) {
+	model := newCacheTestModel(cacheFixtureSnapshot())
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	model = updated.(Model)
+	if model.Pending == nil || model.Pending.Action != control.ActionJVMRunGC {
+		t.Fatalf("expected pending JVM GC, got %+v", model.Pending)
+	}
+	if model.Pending.Target.PID != 7001 {
+		t.Fatalf("pending target PID = %d; want 7001", model.Pending.Target.PID)
+	}
+	if view := model.View(); !strings.Contains(view, "FORÇAR GC NA JVM") || !strings.Contains(view, "PID 7001") {
+		t.Fatal("confirmation modal did not preview the JVM cleanup")
+	}
+
+	// Move to the browser and resolve its CDP target.
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	model = updated.(Model)
+	if model.Pending == nil || model.Pending.Action != control.ActionCDPCloseBlank {
+		t.Fatalf("expected pending CDP close_blank, got %+v", model.Pending)
+	}
+
+	// Plain processes have no cleanable cache.
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	model = updated.(Model)
+	if model.Pending != nil {
+		t.Fatalf("expected no pending action for bash, got %+v", model.Pending)
+	}
+	if !strings.Contains(model.Message, "Nenhum cache limpável") {
+		t.Fatalf("message = %q; want no-cleanable-cache feedback", model.Message)
+	}
+}
+
+func TestModelCleanAllKeyPreviewsEveryTarget(t *testing.T) {
+	model := newCacheTestModel(cacheFixtureSnapshot())
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")})
+	model = updated.(Model)
+	if model.Pending == nil || model.Pending.Action != control.ActionCleanAll {
+		t.Fatalf("expected pending clean-all, got %+v", model.Pending)
+	}
+	if len(model.Pending.Targets) != 3 {
+		t.Fatalf("targets = %+v; want OS + browser + JVM", model.Pending.Targets)
+	}
+	view := model.View()
+	for _, expected := range []string{
+		"LIMPEZA TOTAL DE CACHE",
+		"• SO: Page cache, dentries e inodes · ≈ 2.00 GB",
+		"Navegador",
+		"JVM",
+		"[ enter / y ] CONFIRMAR",
+	} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("clean-all modal omitted %q", expected)
+		}
+	}
+}
+
+func TestModelCleanAllModalTruncatesLongTargetLists(t *testing.T) {
+	snapshot := cacheFixtureSnapshot()
+	for pid := int32(8000); pid < 8008; pid++ {
+		snapshot.Processes = append(snapshot.Processes, processdomain.Info{
+			Identity: processdomain.Identity{PID: pid},
+			Command:  "java",
+			Category: processdomain.CategoryJVM,
+			State:    processdomain.StateRunning,
+		})
+	}
+	model := newCacheTestModel(snapshot)
+	model.Width, model.Height = 60, 30
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	model = updated.(Model)
+	if model.Pending == nil || len(model.Pending.Targets) != 11 {
+		t.Fatalf("targets = %d; want 11 (OS + browser + 9 JVMs)", len(model.Pending.Targets))
+	}
+	view := model.View()
+	if !strings.Contains(view, "+5 outro(s)") {
+		t.Fatal("clean-all modal did not collapse overflow targets")
+	}
+	for lineNumber, line := range strings.Split(view, "\n") {
+		if got := lipgloss.Width(line); got > model.Width {
+			t.Fatalf("line %d width %d exceeds %d: %q", lineNumber+1, got, model.Width, line)
+		}
+	}
+}
+
+func TestModelCleanAllResultMessage(t *testing.T) {
+	model := newCacheTestModel(cacheFixtureSnapshot())
+	updated, _ := model.Update(actionFinishedMsg{
+		result: control.Result{Action: control.ActionCleanAll, Reclaimed: 2048, Succeeded: 2, Failed: 1},
+	})
+	model = updated.(Model)
+	if !strings.Contains(model.Message, "Limpeza total concluída") ||
+		!strings.Contains(model.Message, "2 ok") ||
+		!strings.Contains(model.Message, "1 falha") {
+		t.Fatalf("message = %q", model.Message)
+	}
+	if !model.Loading {
+		t.Fatal("clean-all completion did not refresh the snapshot")
+	}
+}
+
+type recordingProvider struct {
+	got processdomain.Info
+}
+
+func (p *recordingProvider) Name() string                     { return "rec" }
+func (p *recordingProvider) Supports(processdomain.Info) bool { return true }
+func (p *recordingProvider) Detect(context.Context, processdomain.Info) []provider.ContextInfo {
+	return nil
+}
+func (p *recordingProvider) Actions(context.Context, processdomain.Info) []provider.Action {
+	return []provider.Action{{ID: "rec.act"}}
+}
+func (p *recordingProvider) Execute(_ context.Context, _ string, proc processdomain.Info) (uint64, error) {
+	p.got = proc
+	return 0, nil
+}
+
+func TestModelGitActionRequests(t *testing.T) {
+	model, backend := newTestModel()
+	snapshot := backend.snapshot
+	snapshot.Processes[0].Category = processdomain.CategoryDevelopment
+	snapshot.Processes[0].Command = "node"
+	snapshot.Processes[0].Cwd = "/tmp/sopro-demo"
+	model.applySnapshot(snapshot)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+	model = updated.(Model)
+	if model.Pending == nil || model.Pending.Action != control.ActionGitStatus {
+		t.Fatalf("expected pending git.status, got %+v", model.Pending)
+	}
+	if view := model.View(); !strings.Contains(view, "GIT STATUS") {
+		t.Fatal("confirmation modal did not preview git status")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	model = updated.(Model)
+	if model.Pending == nil || model.Pending.Action != control.ActionGitFetch {
+		t.Fatalf("expected pending git.fetch, got %+v", model.Pending)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+	model = updated.(Model)
+	if model.Pending != nil {
+		t.Fatalf("expected 'w' to be ignored on a non-dev process, got %+v", model.Pending)
+	}
+}
+
+func TestExecuteActionCmdPassesFullTargetToProviders(t *testing.T) {
+	recorder := &recordingProvider{}
+	backend := &fakeBackend{snapshot: testSnapshot()}
+	service := app.NewService(app.Dependencies{
+		Snapshots: backend, Processes: backend, Cache: backend, Capabilities: backend,
+	}, app.WithProviderRegistry(provider.NewRegistry(recorder)))
+	selected := processdomain.Info{
+		Identity:    processdomain.Identity{PID: 7002, StartedAt: 2},
+		Command:     "chrome",
+		CommandLine: "chrome --remote-debugging-port=9222",
+		Category:    processdomain.CategoryBrowser,
+	}
+
+	message := executeActionCmd(service, control.Request{
+		Action: control.Action("rec.act"), Process: selected.Identity, Target: selected,
+	})()
+	finished, ok := message.(actionFinishedMsg)
+	if !ok || finished.err != nil {
+		t.Fatalf("message = %#v", message)
+	}
+	if recorder.got.CommandLine != selected.CommandLine || recorder.got.Category != selected.Category {
+		t.Fatalf("provider got %+v; want the full selected process", recorder.got)
 	}
 }
