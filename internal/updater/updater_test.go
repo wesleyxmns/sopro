@@ -189,6 +189,74 @@ func TestCheckerFetchRelease(t *testing.T) {
 	_ = checker
 }
 
+func TestCheckTempBinaryRefusesTempDir(t *testing.T) {
+	tmpRoot, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		t.Skip("unresolvable temp dir")
+	}
+	tmpExe := filepath.Join(tmpRoot, "go-build123", "exe", "sopro")
+	if err := CheckTempBinary(tmpExe); err != ErrTempBinary {
+		t.Fatalf("CheckTempBinary(%q) = %v; want ErrTempBinary", tmpExe, err)
+	}
+	if err := CheckTempBinary(tmpRoot); err != ErrTempBinary {
+		t.Fatalf("CheckTempBinary(%q) = %v; want ErrTempBinary", tmpRoot, err)
+	}
+}
+
+func TestCheckTempBinaryAllowsInstalledPaths(t *testing.T) {
+	for _, path := range []string{
+		"/usr/local/bin/sopro",
+		filepath.Join(os.TempDir(), "..", "opt", "sopro"),
+	} {
+		if err := CheckTempBinary(path); err != nil {
+			t.Fatalf("CheckTempBinary(%q) = %v; want nil", path, err)
+		}
+	}
+}
+
+func TestReplaceBinaryOverwritesWhileHeldOpen(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "sopro")
+	if err := os.WriteFile(target, []byte("old-binary"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	held, err := os.Open(target) // simulate a running process holding the file
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	if runtime.GOOS == "windows" {
+		// Windows locks open files against rename; close to test the copy path.
+		held.Close()
+	}
+	if err := replaceBinary(target, []byte("new-binary")); err != nil {
+		t.Fatalf("replaceBinary: %v", err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "new-binary" {
+		t.Fatalf("binary on disk = %q; want new bytes", data)
+	}
+}
+
+func TestVerifyBinaryDetectsMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sopro")
+	if err := os.WriteFile(path, []byte("on-disk"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyBinary(path, []byte("on-disk")); err != nil {
+		t.Fatalf("matching bytes rejected: %v", err)
+	}
+	if err := verifyBinary(path, []byte("expected")); err == nil {
+		t.Fatal("mismatched bytes accepted")
+	}
+	if err := verifyBinary(filepath.Join(t.TempDir(), "missing"), []byte("x")); err == nil {
+		t.Fatal("missing binary accepted")
+	}
+}
+
 func TestVerifyChecksum(t *testing.T) {
 	tmpDir := t.TempDir()
 	archivePath := filepath.Join(tmpDir, "test.tar.gz")

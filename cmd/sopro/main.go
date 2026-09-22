@@ -315,12 +315,18 @@ func handleUpdateCommand(args []string) {
 	checkOnly := updateFlags.Bool("check", false, "apenas verifica se há atualizações disponíveis sem instalar")
 	updateFlags.BoolVar(checkOnly, "c", false, "apenas verifica se há atualizações disponíveis sem instalar (atalho)")
 	_ = updateFlags.Parse(args)
+	updateTarget := ""
 	if !*checkOnly {
 		executable, requiresElevation, err := updater.UpdateTarget()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Erro ao preparar atualização: %v\n", err)
 			os.Exit(1)
 		}
+		if err := updater.CheckTempBinary(executable); err != nil {
+			fmt.Fprintf(os.Stderr, "Erro ao preparar atualização: %v\n", err)
+			os.Exit(1)
+		}
+		updateTarget = executable
 		if requiresElevation {
 			fmt.Println("A instalação atual requer permissão administrativa; solicitando via sudo...")
 			command, commandErr := updater.ElevatedCommand(executable, append([]string{"update"}, args...)...)
@@ -371,5 +377,5 @@ func handleUpdateCommand(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("✔ Sopro atualizado com sucesso para %s!\n", release.TagName)
+	fmt.Printf("✔ Sopro atualizado com sucesso para %s em %s!\n", release.TagName, updateTarget)
 }

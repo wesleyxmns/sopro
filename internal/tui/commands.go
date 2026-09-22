@@ -118,13 +118,13 @@ func applyUpdateCmd(release *updater.ReleaseInfo) tea.Cmd {
 	if requiresElevation {
 		process, processErr := updater.ElevatedCommand(executable, "update")
 		if processErr != nil {
-			return func() tea.Msg { return updateAppliedMsg{release: release, err: processErr} }
+			return func() tea.Msg { return updateAppliedMsg{release: release, path: executable, err: processErr} }
 		}
 		return tea.ExecProcess(process, func(runErr error) tea.Msg {
 			if runErr != nil {
 				runErr = fmt.Errorf("não foi possível concluir a atualização com permissão administrativa: %w", runErr)
 			}
-			return updateAppliedMsg{release: release, err: runErr}
+			return updateAppliedMsg{release: release, path: executable, err: runErr}
 		})
 	}
 
@@ -132,6 +132,6 @@ func applyUpdateCmd(release *updater.ReleaseInfo) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		applyErr := updater.Apply(ctx, release)
-		return updateAppliedMsg{release: release, err: applyErr}
+		return updateAppliedMsg{release: release, path: executable, err: applyErr}
 	}
 }

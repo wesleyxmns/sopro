@@ -100,7 +100,7 @@ sopro audit --last 20
 
 Quando o binário estiver em um diretório protegido, como `/usr/local/bin`, o
 comando de atualização solicitará permissão administrativa pelo `sudo`. A senha
-é recebida diretamente pelo sistema e não é lida pelo Sopro.
+é recebida diretamente pelo sistema e não é lida pelo Sopro. A mensagem de sucesso informa o caminho do binário atualizado — o reinício precisa carregar esse mesmo arquivo.
 
 ---
 

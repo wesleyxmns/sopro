@@ -202,7 +202,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.UpdateAvailable = nil
 		m.PendingUpdate = nil
 		m.UpdateNeedsElevation = false
-		m.Message = fmt.Sprintf("✔ Sopro atualizado para %s! Reiniciando…", msg.release.TagName)
+		target := ""
+		if msg.path != "" {
+			target = " em " + msg.path
+		}
+		m.Message = fmt.Sprintf("✔ Sopro atualizado para %s%s! Reiniciando…", msg.release.TagName, target)
 		m.RestartRequested = true
 		m.syncViewport()
 		return m, tea.Tick(restartDelay, func(time.Time) tea.Msg { return restartMsg{} })
