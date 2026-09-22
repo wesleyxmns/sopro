@@ -41,6 +41,7 @@ type updateCheckedMsg struct {
 
 type updateAppliedMsg struct {
 	release *updater.ReleaseInfo
+	path    string
 	err     error
 }
 

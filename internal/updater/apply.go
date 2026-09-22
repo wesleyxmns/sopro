@@ -22,6 +22,7 @@ var (
 	ErrNoAssetForPlatform = errors.New("nenhum arquivo compatível encontrado para este sistema operacional e arquitetura")
 	ErrChecksumMismatch   = errors.New("falha na validação de integridade SHA256: o hash não corresponde ao release oficial")
 	ErrPermissionDenied   = errors.New("permissão negada para atualizar o binário: execute 'sudo sopro update'")
+	ErrTempBinary         = errors.New("binário temporário (ex.: go run) não pode ser atualizado: instale o Sopro e atualize a cópia instalada")
 )
 
 // Apply faz o download, validação e substituição atômica do binário atual pelo da release informada.
@@ -36,6 +37,9 @@ func Apply(ctx context.Context, release *ReleaseInfo) error {
 	}
 	if requiresElevation {
 		return ErrPermissionDenied
+	}
+	if err := CheckTempBinary(execPath); err != nil {
+		return err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "sopro-update-*")
@@ -63,7 +67,10 @@ func Apply(ctx context.Context, release *ReleaseInfo) error {
 		return fmt.Errorf("falha ao extrair binário do arquivo: %w", err)
 	}
 
-	return replaceBinary(execPath, binaryData)
+	if err := replaceBinary(execPath, binaryData); err != nil {
+		return err
+	}
+	return verifyBinary(execPath, binaryData)
 }
 
 // UpdateTarget retorna o executável em uso e informa se sua substituição exige
@@ -83,6 +90,24 @@ func UpdateTarget() (path string, requiresElevation bool, err error) {
 	}
 	requiresElevation, err = updateTargetRequiresElevation(path)
 	return path, requiresElevation, err
+}
+
+// CheckTempBinary recusa a atualização de binários executados a partir do
+// diretório temporário (ex.: go run), onde a substituição não persistiria
+// após o reinício — o que seria reportado como sucesso indevidamente.
+func CheckTempBinary(path string) error {
+	tmpDir, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return nil
+	}
+	rel, err := filepath.Rel(tmpDir, path)
+	if err != nil {
+		return nil
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return nil
+	}
+	return ErrTempBinary
 }
 
 func updateTargetRequiresElevation(path string) (bool, error) {
@@ -274,6 +299,19 @@ func replaceBinary(execPath string, newBinaryData []byte) error {
 			}
 			return fmt.Errorf("falha ao substituir binário em %s: %w", execPath, err)
 		}
+	}
+	return nil
+}
+
+// verifyBinary confirma que o binário em disco é exatamente o que foi
+// baixado, para nunca reportar sucesso sobre uma substituição falha.
+func verifyBinary(path string, want []byte) error {
+	got, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("verificação pós-atualização falhou: %w", err)
+	}
+	if !bytes.Equal(got, want) {
+		return errors.New("verificação pós-atualização falhou: o binário em disco difere do baixado")
 	}
 	return nil
 }

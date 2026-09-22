@@ -512,6 +512,18 @@ func TestUpdateAppliedMsg_PermissionErrorShowsAction(t *testing.T) {
 	}
 }
 
+func TestUpdateAppliedMsg_ShowsUpdatedBinaryPath(t *testing.T) {
+	m, _ := newTestModel()
+	m.Width, m.Height = 120, 40
+	release := &updater.ReleaseInfo{TagName: "v0.4.1"}
+
+	updated, _ := m.Update(updateAppliedMsg{release: release, path: "/usr/local/bin/sopro", err: nil})
+	m = updated.(Model)
+	if !strings.Contains(m.Message, "/usr/local/bin/sopro") {
+		t.Fatalf("success message omits updated binary path: %q", m.Message)
+	}
+}
+
 func TestSnapshotRefreshPreservesUpdaterMessages(t *testing.T) {
 	tests := []struct {
 		name    string
