@@ -19,6 +19,7 @@ type Theme struct {
 	Muted      lipgloss.Style
 	Strong     lipgloss.Style
 	Divider    lipgloss.Style
+	Shade      lipgloss.Style
 	FocusColor lipgloss.TerminalColor
 	MutedColor lipgloss.TerminalColor
 }
@@ -52,30 +53,34 @@ func ThemeFor(mode string) (Theme, error) {
 			lipgloss.AdaptiveColor{Light: "#92400E", Dark: "#FBBF24"},
 			lipgloss.AdaptiveColor{Light: "#991B1B", Dark: "#FCA5A5"},
 			lipgloss.AdaptiveColor{Light: "#E0F2FE", Dark: "#102A33"},
+			lipgloss.AdaptiveColor{Light: "#7DD3FC", Dark: "#0E7490"},
 		), nil
 	case "dark":
 		return colorTheme(
 			lipgloss.Color("#67E8F9"), lipgloss.Color("#7F91A1"),
 			lipgloss.Color("#86EFAC"), lipgloss.Color("#FBBF24"),
 			lipgloss.Color("#FCA5A5"), lipgloss.Color("#102A33"),
+			lipgloss.Color("#0E7490"),
 		), nil
 	case "light":
 		return colorTheme(
 			lipgloss.Color("#0369A1"), lipgloss.Color("#64748B"),
 			lipgloss.Color("#166534"), lipgloss.Color("#92400E"),
 			lipgloss.Color("#991B1B"), lipgloss.Color("#E0F2FE"),
+			lipgloss.Color("#7DD3FC"),
 		), nil
 	case "cyber":
 		return colorTheme(
 			lipgloss.Color("#7AA2F7"), lipgloss.Color("#565F89"),
 			lipgloss.Color("#9ECE6A"), lipgloss.Color("#FF9E64"),
 			lipgloss.Color("#F7768E"), lipgloss.Color("#1F2B46"),
+			lipgloss.Color("#46538C"),
 		), nil
 	}
 	return Theme{}, nil
 }
 
-func colorTheme(focus, muted, good, warning, danger, selected lipgloss.TerminalColor) Theme {
+func colorTheme(focus, muted, good, warning, danger, selected, shade lipgloss.TerminalColor) Theme {
 	return Theme{
 		Brand:      lipgloss.NewStyle().Foreground(focus).Bold(true),
 		Focus:      lipgloss.NewStyle().Foreground(focus).Bold(true),
@@ -86,6 +91,7 @@ func colorTheme(focus, muted, good, warning, danger, selected lipgloss.TerminalC
 		Muted:      lipgloss.NewStyle().Foreground(muted),
 		Strong:     lipgloss.NewStyle().Bold(true),
 		Divider:    lipgloss.NewStyle().Foreground(muted),
+		Shade:      lipgloss.NewStyle().Foreground(shade),
 		FocusColor: focus,
 		MutedColor: muted,
 	}
@@ -102,5 +108,6 @@ func monochromeTheme() Theme {
 		Muted:    lipgloss.NewStyle().Faint(true),
 		Strong:   lipgloss.NewStyle().Bold(true),
 		Divider:  lipgloss.NewStyle().Faint(true),
+		Shade:    lipgloss.NewStyle().Faint(true),
 	}
 }
