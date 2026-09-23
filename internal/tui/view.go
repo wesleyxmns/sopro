@@ -299,7 +299,7 @@ func (m Model) renderProcessSectionHeader(layout layout) string {
 		line = ansi.Truncate(left+strings.Repeat(" ", gap)+right, layout.width, "")
 	}
 	tabs := ansi.Truncate(m.renderCategoryTabs(layout.width), layout.width, "")
-	return m.theme.Divider.Render(strings.Repeat("─", layout.width)) + "\n" + line + "\n" + tabs + "\n"
+	return m.theme.Divider.Render(strings.Repeat("─", layout.width)) + "\n" + line + "\n" + tabs
 }
 
 func (m Model) renderCategoryTabs(width int) string {

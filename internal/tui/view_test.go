@@ -36,7 +36,7 @@ func TestSplashShowsBrandBeforeDashboard(t *testing.T) {
 	model, _ := newTestModel()
 	model.ShowSplash = true
 	view := model.View()
-	if !strings.Contains(view, "____") || !strings.Contains(view, "observando a memória com calma") {
+	if !strings.Contains(view, "████  ███") || !strings.Contains(view, "observando a memória com calma") {
 		t.Fatal("splash did not render the Sopro brand")
 	}
 	if strings.Contains(view, "Processos") {
@@ -194,7 +194,7 @@ func TestWideDashboardKeepsLargeLogoVisible(t *testing.T) {
 	model.applySnapshot(backend.snapshot)
 
 	view := model.View()
-	if !strings.Contains(view, "____") || !strings.Contains(view, "Processos") {
+	if !strings.Contains(view, "████  ███") || !strings.Contains(view, "Processos") {
 		t.Fatal("wide dashboard omitted the persistent large logo or process list")
 	}
 }
@@ -210,7 +210,7 @@ func TestCompactDashboardUsesCompactWordmark(t *testing.T) {
 	if !strings.Contains(view, "SOPRO") {
 		t.Fatal("compact dashboard omitted the wordmark")
 	}
-	if strings.Contains(view, "____") {
+	if strings.Contains(view, "████  ███") {
 		t.Fatal("compact dashboard rendered the large logo")
 	}
 }
