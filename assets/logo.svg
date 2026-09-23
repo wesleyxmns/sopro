@@ -1,8 +1,8 @@
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  viewBox="0 0 490 150"
+  viewBox="0 0 490 210"
   width="490"
-  height="150"
+  height="210"
   preserveAspectRatio="xMidYMid meet"
   role="img"
   aria-labelledby="sopro-title sopro-desc"
@@ -10,7 +10,7 @@
   <title id="sopro-title">SOPRO</title>
 
   <desc id="sopro-desc">
-    Logotipo SOPRO em estilo ASCII acompanhado por um símbolo de três ondas.
+    Logotipo SOPRO em estilo 3D acompanhado por um símbolo de três ondas.
   </desc>
 
   <style>
@@ -90,10 +90,12 @@
     class="brand ascii"
     xml:space="preserve"
   >
-    <tspan x="66" dy="0">  ____   ___  ____  ____   ___  </tspan>
-    <tspan x="66" dy="24"> / ___| / _ \|  _ \|  _ \ / _ \ </tspan>
-    <tspan x="66" dy="24"> \___ \| | | | |_) | |_) | | | |</tspan>
-    <tspan x="66" dy="24">  ___) | |_| |  __/|  _ &lt;| |_| |</tspan>
-    <tspan x="66" dy="24"> |____/ \___/|_|   |_| \_\ \___/ </tspan>
+    <tspan x="66" dy="0"> ████  ███  ████  ████   ███</tspan>
+    <tspan x="66" dy="24">█ ░░░░█ ░░█ █░░░█ █░░░█ █ ░░█</tspan>
+    <tspan x="66" dy="24"> ███░░█░ ░█░████░░████░░█░ ░█░</tspan>
+    <tspan x="66" dy="24">  ░░█ █░░ █░█░░░░ █░░█░ █░░ █░░</tspan>
+    <tspan x="66" dy="24">████░░ ███ ░█░░░░░█░░░█░ ███ ░░</tspan>
+    <tspan x="66" dy="24"> ░░░░ ░ ░░░ ░░░    ░░  ░  ░░░ ░</tspan>
+    <tspan x="66" dy="24">  ░░░░   ░░░  ░     ░   ░  ░░░</tspan>
   </text>
 </svg>
