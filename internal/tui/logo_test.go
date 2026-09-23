@@ -16,7 +16,7 @@ func TestRenderLogoAvoidsShadeGlyph(t *testing.T) {
 	if strings.Contains(stripped, "░") {
 		t.Fatal("rendered logo relies on the ░ glyph for shading")
 	}
-	if !strings.Contains(stripped, "████  ███") {
-		t.Fatal("rendered logo lost the solid SOPRO letterforms")
+	if want := strings.ReplaceAll(logo, "░", "█"); stripped != want {
+		t.Fatal("rendered logo changed the SOPRO letterforms")
 	}
 }

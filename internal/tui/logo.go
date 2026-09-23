@@ -17,15 +17,12 @@ const logo = ` ████  ███  ████  ████   ███
   ░░░░   ░░░  ░     ░   ░  ░░░`
 
 // The art doubles as a shade map: █ marks solid pixels, ░ marks shade
-// pixels. Shade is painted as a dimmed full block rather than the ░ glyph,
-// which terminal fonts often substitute from another face with mismatched
-// metrics, shearing the rows.
+// pixels. Shade is painted as a full block in the theme's shade color
+// rather than the ░ glyph, which terminal fonts often substitute from
+// another face with mismatched metrics, shearing the rows.
 func (m Model) renderLogo() string {
 	solid := m.theme.Brand
-	shade := lipgloss.NewStyle().Faint(true)
-	if m.theme.FocusColor != nil {
-		shade = lipgloss.NewStyle().Foreground(m.theme.FocusColor).Faint(true)
-	}
+	shade := m.theme.Shade
 	rawLines := strings.Split(logo, "\n")
 	lines := make([]string, len(rawLines))
 	for index, raw := range rawLines {
