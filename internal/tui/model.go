@@ -686,7 +686,7 @@ func (m *Model) syncViewport() {
 	layout := calculateLayout(m.Width, m.Height)
 	m.viewport.Width = layout.listWidth
 	m.viewport.Height = layout.viewportHeight
-	if m.UpdateAvailable != nil {
+	if m.UpdateAvailable != nil && layout.mode != layoutWide {
 		m.viewport.Height = max(m.viewport.Height-1, 1)
 	}
 	m.viewport.SetContent(m.renderProcessRows(layout.listWidth, layout.mode))

@@ -30,8 +30,12 @@ func calculateLayout(width, height int) layout {
 		result.mode = layoutStandard
 	}
 	result.viewportHeight = max(height-11, 1)
-	if result.mode != layoutCompact {
+	if result.mode == layoutStandard {
 		result.viewportHeight = max(height-12, 1)
+	} else if result.mode == layoutWide {
+		// The wide header is logo-bound: it keeps its full height with or
+		// without the update notice, so the list always reserves that row.
+		result.viewportHeight = max(height-13, 1)
 	}
 	return result
 }

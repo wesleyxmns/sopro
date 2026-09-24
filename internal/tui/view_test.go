@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -105,6 +106,42 @@ func TestUpdateNoticePreservesResponsiveBounds(t *testing.T) {
 		for lineNumber, line := range lines {
 			if got := lipgloss.Width(line); got > size.Width {
 				t.Fatalf("update view %dx%d line %d width = %d", size.Width, size.Height, lineNumber+1, got)
+			}
+		}
+	}
+}
+
+func TestDashboardWithoutNoticeFitsFullList(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 40, Height: 12},
+		{Width: 72, Height: 20},
+		{Width: 120, Height: 30},
+		{Width: 150, Height: 40},
+	} {
+		model, backend := newTestModel()
+		model.theme = NewTheme()
+		model.Width, model.Height = size.Width, size.Height
+		snapshot := backend.snapshot
+		processes := make([]processdomain.Info, 0, 60)
+		for i := 0; i < 60; i++ {
+			proc := snapshot.Processes[i%len(snapshot.Processes)]
+			proc.Identity.PID = int32(1000 + i)
+			proc.Command = fmt.Sprintf("proc%d", i)
+			processes = append(processes, proc)
+		}
+		snapshot.Processes = processes
+		model.applySnapshot(snapshot)
+		model.UpdateAvailable = nil
+		model.syncViewport()
+
+		lines := strings.Split(model.View(), "\n")
+		if len(lines) > size.Height {
+			t.Fatalf("notice-free view %dx%d used %d lines", size.Width, size.Height, len(lines))
+		}
+		for lineNumber, line := range lines {
+			if got := lipgloss.Width(line); got > size.Width {
+				t.Fatalf("notice-free view %dx%d line %d width = %d", size.Width, size.Height, lineNumber+1, got)
 			}
 		}
 	}
